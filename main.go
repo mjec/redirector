@@ -48,7 +48,7 @@ func loadConfig(filename string) {
 		log.Fatal(err)
 	}
 
-	domainRegex = regexp.MustCompile(`^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
+	domainRegex := regexp.MustCompile(`^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
 
 	for _, domain := range config.Domains {
 		if domain.Code < 300 || domain.Code > 399 {
@@ -59,7 +59,7 @@ func loadConfig(filename string) {
 			log.Fatalf("Invalid destination for domain %s. Destination must begin with 'http://' or 'https://'.", domain.Origin)
 		}
 
-		if !isValidDomain(domain.Origin) {
+		if !domainRegex.MatchString(domain.Origin) {
 			log.Fatalf("Invalid origin for domain %s. Origin must be a valid fully qualified DNS domain name.", domain.Origin)
 		}
 	}
