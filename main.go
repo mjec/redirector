@@ -36,7 +36,10 @@ func (r *RewriteRule) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	r.Regexp = regexp.MustCompile(temp.Regexp)
+	if r.Regexp, err = regexp.Compile(temp.Regexp); err != nil {
+		return err
+	}
+
 	r.Replacement = temp.Replacement
 	r.Code = temp.Code
 
