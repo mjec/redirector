@@ -112,19 +112,21 @@ func loadConfig(filename string) {
 }
 
 func redirectHandler(w http.ResponseWriter, r *http.Request) {
-	requestUri := r.URL.String()
 	for origin, domains := range config.RewriteRules {
 		if r.Host == origin {
 			for _, domain := range domains {
-				if !domain.Regexp.MatchString(requestUri) {
+				if !domain.Regexp.MatchString(r.RequestURI) {
 					continue
 				}
-				http.Redirect(w, r, domain.Regexp.ReplaceAllString(requestUri, domain.Replacement), domain.Code)
+				http.Redirect(w, r, domain.Regexp.ReplaceAllString(r.RequestURI, domain.Replacement), domain.Code)
 				return
 			}
 		}
 	}
 
-	// TODO: make this just close the connection, not even return an HTTP response
-	w.WriteHeader(http.StatusUnauthorized)
+	conn, _, err := http.NewResponseController(w).Hijack()
+	if err != nil {
+		return
+	}
+	conn.Close()
 }
