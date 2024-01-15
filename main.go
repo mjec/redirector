@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -43,17 +44,6 @@ func (r *RewriteRule) UnmarshalJSON(data []byte) error {
 	r.Replacement = temp.Replacement
 	r.Code = temp.Code
 
-	// Validate Replacement
-	if r.Regexp.NumSubexp() > 0 {
-		replacementRegex := regexp.MustCompile(`(?<!\$)(\$\d+)`)
-		matches := replacementRegex.FindAllString(r.Replacement, -1)
-		for _, match := range matches {
-			if len(match) > 1 && len(match) <= r.Regexp.NumSubexp()*2 && strings.Count(match, "$")%2 == 0 {
-				return fmt.Errorf("Invalid Replacement: %s. The number matched must be less than or equal to Regexp.NumSubexp()", r.Replacement)
-			}
-		}
-	}
-
 	return nil
 }
 
@@ -83,6 +73,7 @@ func loadConfig(filename string) {
 	}
 
 	domainRegex := regexp.MustCompile(`^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
+	replacementRegex := regexp.MustCompile(`\$(\d+)`)
 
 	var problems []string
 
@@ -91,13 +82,22 @@ func loadConfig(filename string) {
 			problems = append(problems, fmt.Sprintf("Invalid domain %s. Keys must be valid fully qualified DNS domain names.", origin))
 		}
 
-		for _, domain := range domains {
-			if domain.Code < 300 || domain.Code > 399 {
+		for _, rewriteRule := range domains {
+			if rewriteRule.Code < 300 || rewriteRule.Code > 399 {
 				problems = append(problems, fmt.Sprintf("Invalid redirect code for domain %s. Code must be between 300 and 399 inclusive.", origin))
 			}
 
-			if !strings.HasPrefix(domain.Replacement, "http://") && !strings.HasPrefix(domain.Replacement, "https://") {
+			if !strings.HasPrefix(rewriteRule.Replacement, "http://") && !strings.HasPrefix(rewriteRule.Replacement, "https://") {
 				problems = append(problems, fmt.Sprintf("Invalid replacement for domain %s. Destination must begin with 'http://' or 'https://'.", origin))
+			}
+
+			matches := replacementRegex.FindAllString(strings.ReplaceAll(rewriteRule.Replacement, "$$", ""), -1)
+			for _, match := range matches {
+				if replacement, err := strconv.ParseInt(match, 10, 0); err != nil {
+					problems = append(problems, fmt.Sprintf("Invalid replacement '%s' (only numbered replacements are supported): %v", rewriteRule.Replacement, err))
+				} else if int(replacement) < 0 || int(replacement) > rewriteRule.Regexp.NumSubexp() {
+					problems = append(problems, fmt.Sprintf("Invalid replacement '%s': replacement group $%d does not exist", rewriteRule.Replacement, replacement))
+				}
 			}
 
 		}
