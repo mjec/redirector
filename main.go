@@ -19,8 +19,13 @@ type Config struct {
 
 var config Config
 
+import "flag"
+
 func main() {
-	loadConfig("config.json")
+	configFile := flag.String("c", "config.json", "path to the config file")
+	flag.Parse()
+
+	loadConfig(*configFile)
 
 	http.HandleFunc("/", redirectHandler)
 	log.Fatal(http.ListenAndServe(":8080", nil))
