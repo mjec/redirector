@@ -46,10 +46,13 @@ func loadConfig(filename string) {
 }
 
 func redirectHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Host == "www.example.com" {
-		http.Redirect(w, r, "http://new-server.com", http.StatusMovedPermanently)
-	} else {
-		// TODO: make this just close the connection, not even return an HTTP response
-		w.WriteHeader(http.StatusUnauthorized)
+	for _, domain := range config.Domains {
+		if r.Host == domain.Origin {
+			http.Redirect(w, r, domain.Destination, domain.Code)
+			return
+		}
 	}
+
+	// TODO: make this just close the connection, not even return an HTTP response
+	w.WriteHeader(http.StatusUnauthorized)
 }
