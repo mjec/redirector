@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -49,18 +50,27 @@ func loadConfig(filename string) {
 
 	domainRegex := regexp.MustCompile(`^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
 
+	var problems []string
+
 	for _, domain := range config.Domains {
 		if domain.Code < 300 || domain.Code > 399 {
-			log.Fatalf("Invalid code for domain %s. Code must be between 300 and 399 inclusive.", domain.Origin)
+			problems = append(problems, fmt.Sprintf("Invalid code for domain %s. Code must be between 300 and 399 inclusive.", domain.Origin))
 		}
 
 		if !strings.HasPrefix(domain.Destination, "http://") && !strings.HasPrefix(domain.Destination, "https://") {
-			log.Fatalf("Invalid destination for domain %s. Destination must begin with 'http://' or 'https://'.", domain.Origin)
+			problems = append(problems, fmt.Sprintf("Invalid destination for domain %s. Destination must begin with 'http://' or 'https://'.", domain.Origin))
 		}
 
 		if !domainRegex.MatchString(domain.Origin) {
-			log.Fatalf("Invalid origin for domain %s. Origin must be a valid fully qualified DNS domain name.", domain.Origin)
+			problems = append(problems, fmt.Sprintf("Invalid origin for domain %s. Origin must be a valid fully qualified DNS domain name.", domain.Origin))
 		}
+	}
+
+	if len(problems) > 0 {
+		for _, problem := range problems {
+			log.Println(problem)
+		}
+		log.Fatal("Configuration contains errors. Please fix the problems and try again.")
 	}
 }
 
