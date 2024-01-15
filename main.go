@@ -11,15 +11,15 @@ import (
 	"strings"
 )
 
-type Domain struct {
+type RewriteRule struct {
 	Destination string `json:"destination"`
 	Code        int    `json:"code"`
 	AppendPath  bool   `json:"append_path"`
 }
 
 type Config struct {
-	Domains map[string][]Domain `json:"domains"`
-	Addr    string              `json:"addr"`
+	Domains map[string][]RewriteRule `json:"domains"`
+	Addr    string                   `json:"addr"`
 }
 
 var config Config
