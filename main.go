@@ -24,6 +24,25 @@ type Config struct {
 
 var config Config
 
+func (r *RewriteRule) UnmarshalJSON(data []byte) error {
+	var temp struct {
+		Regexp      string `json:"regexp"`
+		Replacement string `json:"replacement"`
+		Code        int    `json:"code"`
+	}
+
+	err := json.Unmarshal(data, &temp)
+	if err != nil {
+		return err
+	}
+
+	r.Regexp = regexp.MustCompile(temp.Regexp)
+	r.Replacement = temp.Replacement
+	r.Code = temp.Code
+
+	return nil
+}
+
 func main() {
 	configFile := flag.String("c", "config.json", "path to the config file")
 	flag.Parse()
