@@ -45,6 +45,27 @@ func loadConfig(filename string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	for _, domain := range config.Domains {
+		if domain.Code < 300 || domain.Code > 399 {
+			log.Fatalf("Invalid code for domain %s. Code must be between 300 and 399 inclusive.", domain.Origin)
+		}
+
+		if !strings.HasPrefix(domain.Destination, "http://") && !strings.HasPrefix(domain.Destination, "https://") {
+			log.Fatalf("Invalid destination for domain %s. Destination must begin with 'http://' or 'https://'.", domain.Origin)
+		}
+
+		if !isValidDomain(domain.Origin) {
+			log.Fatalf("Invalid origin for domain %s. Origin must be a valid fully qualified DNS domain name.", domain.Origin)
+		}
+	}
+}
+
+func isValidDomain(domain string) bool {
+	// Implement your logic to validate if the domain is a valid fully qualified DNS domain name.
+	// You can use regular expressions or a library like "github.com/asaskevich/govalidator" for validation.
+	// Return true if the domain is valid, false otherwise.
+	return true
 }
 
 func redirectHandler(w http.ResponseWriter, r *http.Request) {
