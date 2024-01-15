@@ -23,6 +23,7 @@ type Config struct {
 }
 
 var config Config
+var domainRegex *regexp.Regexp
 
 func main() {
 	configFile := flag.String("c", "config.json", "path to the config file")
@@ -47,6 +48,8 @@ func loadConfig(filename string) {
 		log.Fatal(err)
 	}
 
+	domainRegex = regexp.MustCompile(`^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
+
 	for _, domain := range config.Domains {
 		if domain.Code < 300 || domain.Code > 399 {
 			log.Fatalf("Invalid code for domain %s. Code must be between 300 and 399 inclusive.", domain.Origin)
@@ -60,17 +63,6 @@ func loadConfig(filename string) {
 			log.Fatalf("Invalid origin for domain %s. Origin must be a valid fully qualified DNS domain name.", domain.Origin)
 		}
 	}
-}
-
-func isValidDomain(domain string) bool {
-	// Regular expression pattern for validating a fully qualified DNS domain name
-	pattern := `^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`
-
-	// Compile the regular expression pattern
-	regex := regexp.MustCompile(pattern)
-
-	// Match the domain against the regular expression
-	return regex.MatchString(domain)
 }
 
 func redirectHandler(w http.ResponseWriter, r *http.Request) {
@@ -91,4 +83,8 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: make this just close the connection, not even return an HTTP response
 	w.WriteHeader(http.StatusUnauthorized)
+}
+
+func isValidDomain(domain string) bool {
+	return domainRegex.MatchString(domain)
 }
