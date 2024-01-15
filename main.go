@@ -7,14 +7,14 @@ import (
 	"os"
 )
 
-type DomainRecord struct {
+type Domain struct {
 	Origin      string `json:"origin"`
 	Destination string `json:"destination"`
 	Code        int    `json:"code"`
 }
 
 type Config struct {
-	Domains []DomainRecord `json:"domains"`
+	Domains []Domain `json:"domains"`
 }
 
 var config Config
