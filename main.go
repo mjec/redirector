@@ -16,23 +16,26 @@ type Rule struct {
 	Regexp      *regexp.Regexp `json:"regexp"`
 	Replacement string         `json:"replacement"`
 	Code        int            `json:"code"`
+	LogHits     bool           `json:"log_hits"`
 }
 
 type Domain struct {
 	RewriteRules    []Rule           `json:"rewrites"`
 	DefaultResponse *DefaultResponse `json:"default_response"`
+	MatchSubdomains bool             `json:"match_subdomains"`
 }
 
 type DefaultResponse struct {
 	Code    int               `json:"code"`
 	Headers map[string]string `json:"headers"`
 	Body    string            `json:"body"`
+	LogHits bool              `json:"log_hits"`
 }
 
 type Config struct {
 	ListenAddress   string            `json:"listen_address"`
 	DefaultResponse *DefaultResponse  `json:"default_response"`
-	Domains         map[string]Domain `json:"domains"`
+	Domains         map[string]Domain `json:"domains" note:"Keys must be valid fully qualified DNS domain names in ASCII lower case and punycode if required."`
 }
 
 var config Config = Config{
@@ -95,14 +98,14 @@ func loadConfig(filename string) {
 		log.Fatal(err)
 	}
 
-	domainRegex := regexp.MustCompile(`^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?::\d+)?$`)
+	domainRegex := regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?::\d+)?$`)
 	replacementRegex := regexp.MustCompile(`\$(\w+)`)
 
 	var problems []string
 
 	for origin, domain := range config.Domains {
 		if !domainRegex.MatchString(origin) {
-			problems = append(problems, fmt.Sprintf("Invalid domain %s. Keys must be valid fully qualified DNS domain names.", origin))
+			problems = append(problems, fmt.Sprintf("Invalid domain %s. Keys must be valid fully qualified DNS domain names in ASCII lowercase (in punycode if required), optionally including a port number.", origin))
 		}
 
 		for _, rewriteRule := range domain.RewriteRules {
@@ -142,12 +145,15 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 	defaultResponse := config.DefaultResponse
 
 	for origin, domain := range config.Domains {
-		if r.Host == origin {
-			for _, domain := range domain.RewriteRules {
-				if !domain.Regexp.MatchString(r.RequestURI) {
+		if strings.EqualFold(r.Host, origin) || (domain.MatchSubdomains && strings.HasSuffix(strings.ToLower(r.Host), "."+origin)) {
+			for _, rule := range domain.RewriteRules {
+				if !rule.Regexp.MatchString(r.RequestURI) {
 					continue
 				}
-				http.Redirect(w, r, domain.Regexp.ReplaceAllString(r.RequestURI, domain.Replacement), domain.Code)
+				if rule.LogHits {
+					log.Printf("%s %s %s %s", r.RemoteAddr, r.Method, r.Host, r.RequestURI)
+				}
+				http.Redirect(w, r, rule.Regexp.ReplaceAllString(r.RequestURI, rule.Replacement), rule.Code)
 				return
 			}
 
@@ -158,34 +164,24 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if defaultResponse.LogHits {
+		log.Printf("%s %s %s %s", r.RemoteAddr, r.Method, r.Host, r.RequestURI)
+	}
+
 	if defaultResponse.Code == 0 {
 		conn, _, err := http.NewResponseController(w).Hijack()
 		if err == nil && conn != nil {
 			conn.Close()
 			return
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
 		}
+	} else {
+		w.WriteHeader(defaultResponse.Code)
 	}
 
-	w.WriteHeader(defaultResponse.Code)
 	for header, value := range defaultResponse.Headers {
 		w.Header().Add(header, value)
 	}
 	w.Write([]byte(defaultResponse.Body))
 }
-
-// Per RFC9110:
-// 		15.5.20. 421 Misdirected Request
-//
-// 		The 421 (Misdirected Request) status code indicates that the request was directed at a
-// 		server that is unable or unwilling to produce an authoritative response for the target
-// 		URI. An origin server (or gateway acting on behalf of the origin server) sends 421 to
-// 		reject a target URI that does not match an origin for which the server has been
-// 		configured (Section 4.3.1) or does not match the connection context over which the
-// 		request was received (Section 7.4).
-//
-// 		A client that receives a 421 (Misdirected Request) response MAY retry the request,
-// 		whether or not the request method is idempotent, over a different connection, such as a
-// 		fresh connection specific to the target resource's origin, or via an alternative service
-// 		[ALTSVC].
-//
-// 		A proxy MUST NOT generate a 421 response.
