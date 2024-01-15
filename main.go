@@ -61,11 +61,17 @@ func loadConfig(filename string) {
 	}
 }
 
+import "regexp"
+
 func isValidDomain(domain string) bool {
-	// Implement your logic to validate if the domain is a valid fully qualified DNS domain name.
-	// You can use regular expressions or a library like "github.com/asaskevich/govalidator" for validation.
-	// Return true if the domain is valid, false otherwise.
-	return true
+	// Regular expression pattern for validating a fully qualified DNS domain name
+	pattern := `^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`
+	
+	// Compile the regular expression pattern
+	regex := regexp.MustCompile(pattern)
+	
+	// Match the domain against the regular expression
+	return regex.MatchString(domain)
 }
 
 func redirectHandler(w http.ResponseWriter, r *http.Request) {
