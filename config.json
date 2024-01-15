@@ -1,11 +1,26 @@
 {
-	"domains": [
-		{
-			"origin": "example.com",
-			"destination": "https://www.example.com",
-			"code": 301,
-			"append_path": true
+	"domains": {
+		"www.example.com": {
+			"rewrites": [
+				{
+					"regexp": "^/$",
+					"replacement": "https://www.example.com/",
+					"code": 301
+				}
+			],
+			"default_response": {
+				"code": 0
+			}
+		},
+		"example.com:8000": {
+			"rewrites": [
+				{
+					"regexp": "(.*)",
+					"replacement": "https://www.example.com$1",
+					"code": 301
+				}
+			]
 		}
-	],
-	"addr": ":8000"
+	},
+	"listen_address": ":8000"
 }
