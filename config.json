@@ -7,5 +7,5 @@
 			"append_path": true
 		}
 	],
-	"addr": "localhost:8080"
+	"addr": ":8000"
 }
