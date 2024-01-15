@@ -12,7 +12,6 @@ import (
 )
 
 type Domain struct {
-	Origin      string `json:"origin"`
 	Destination string `json:"destination"`
 	Code        int    `json:"code"`
 	AppendPath  bool   `json:"append_path"`
@@ -52,17 +51,17 @@ func loadConfig(filename string) {
 
 	var problems []string
 
-	for _, domain := range config.Domains {
+	for origin, domain := range config.Domains {
 		if domain.Code < 300 || domain.Code > 399 {
-			problems = append(problems, fmt.Sprintf("Invalid code for domain %s. Code must be between 300 and 399 inclusive.", domain.Origin))
+			problems = append(problems, fmt.Sprintf("Invalid code for domain %s. Code must be between 300 and 399 inclusive.", origin))
 		}
 
 		if !strings.HasPrefix(domain.Destination, "http://") && !strings.HasPrefix(domain.Destination, "https://") {
-			problems = append(problems, fmt.Sprintf("Invalid destination for domain %s. Destination must begin with 'http://' or 'https://'.", domain.Origin))
+			problems = append(problems, fmt.Sprintf("Invalid destination for domain %s. Destination must begin with 'http://' or 'https://'.", origin))
 		}
 
-		if !domainRegex.MatchString(domain.Origin) {
-			problems = append(problems, fmt.Sprintf("Invalid origin for domain %s. Origin must be a valid fully qualified DNS domain name.", domain.Origin))
+		if !domainRegex.MatchString(origin) {
+			problems = append(problems, fmt.Sprintf("Invalid origin for domain %s. Origin must be a valid fully qualified DNS domain name.", origin))
 		}
 	}
 
@@ -75,8 +74,8 @@ func loadConfig(filename string) {
 }
 
 func redirectHandler(w http.ResponseWriter, r *http.Request) {
-	for _, domain := range config.Domains {
-		if r.Host == domain.Origin {
+	for origin, domain := range config.Domains {
+		if r.Host == origin {
 			redirectURL := domain.Destination
 			if r.URL.RawQuery != "" {
 				if strings.Contains(domain.Destination, "?") {
