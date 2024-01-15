@@ -16,6 +16,7 @@ type Domain struct {
 
 type Config struct {
 	Domains []Domain `json:"domains"`
+	Addr    string   `json:"addr"`
 }
 
 var config Config
@@ -27,7 +28,7 @@ func main() {
 	loadConfig(*configFile)
 
 	http.HandleFunc("/", redirectHandler)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(config.Addr, nil))
 }
 
 func loadConfig(filename string) {
