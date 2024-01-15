@@ -23,7 +23,6 @@ type Config struct {
 }
 
 var config Config
-var domainRegex *regexp.Regexp
 
 func main() {
 	configFile := flag.String("c", "config.json", "path to the config file")
@@ -83,8 +82,4 @@ func redirectHandler(w http.ResponseWriter, r *http.Request) {
 
 	// TODO: make this just close the connection, not even return an HTTP response
 	w.WriteHeader(http.StatusUnauthorized)
-}
-
-func isValidDomain(domain string) bool {
-	return domainRegex.MatchString(domain)
 }
