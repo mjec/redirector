@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"log"
 	"net/http"
 	"os"
@@ -18,8 +19,6 @@ type Config struct {
 }
 
 var config Config
-
-import "flag"
 
 func main() {
 	configFile := flag.String("c", "config.json", "path to the config file")
