@@ -56,6 +56,7 @@ func (r *Rule) UnmarshalJSON(data []byte) error {
 		Regexp      string `json:"regexp"`
 		Replacement string `json:"replacement"`
 		Code        int    `json:"code"`
+		LogHits     bool   `json:"log_hits"`
 	}
 
 	err := json.Unmarshal(data, &temp)
@@ -69,6 +70,7 @@ func (r *Rule) UnmarshalJSON(data []byte) error {
 
 	r.Replacement = temp.Replacement
 	r.Code = temp.Code
+	r.LogHits = temp.LogHits
 
 	return nil
 }
