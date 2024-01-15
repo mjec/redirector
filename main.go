@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 )
 
 type Domain struct {
@@ -49,7 +50,15 @@ func loadConfig(filename string) {
 func redirectHandler(w http.ResponseWriter, r *http.Request) {
 	for _, domain := range config.Domains {
 		if r.Host == domain.Origin {
-			http.Redirect(w, r, domain.Destination, domain.Code)
+			redirectURL := domain.Destination
+			if r.URL.RawQuery != "" {
+				if strings.Contains(domain.Destination, "?") {
+					redirectURL += "&" + r.URL.RawQuery
+				} else {
+					redirectURL += "?" + r.URL.RawQuery
+				}
+			}
+			http.Redirect(w, r, redirectURL, domain.Code)
 			return
 		}
 	}
