@@ -9,9 +9,12 @@ import (
 )
 
 type Domain struct {
-	Origin      string `json:"origin"`
-	Destination string `json:"destination"`
-	Code        int    `json:"code"`
+	Origin        string `json:"origin"`
+	Destination   string `json:"destination"`
+	Code          int    `json:"code"`
+	AppendPath    bool   `json:"appendPath"`
+}
+	
 }
 
 type Config struct {
