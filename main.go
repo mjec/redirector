@@ -64,7 +64,7 @@ func loadConfig(filename string) {
 
 func isValidDomain(domain string) bool {
 	// Regular expression pattern for validating a fully qualified DNS domain name
-	pattern := `^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`
+	pattern := `^(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`
 
 	// Compile the regular expression pattern
 	regex := regexp.MustCompile(pattern)
