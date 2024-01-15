@@ -42,6 +42,8 @@ func loadConfig(filename string) {
 	defer file.Close()
 
 	decoder := json.NewDecoder(file)
+	decoder.DisallowUnknownFields()
+
 	err = decoder.Decode(&config)
 	if err != nil {
 		log.Fatal(err)
@@ -52,18 +54,19 @@ func loadConfig(filename string) {
 	var problems []string
 
 	for origin, domains := range config.Domains {
+		if !domainRegex.MatchString(origin) {
+			problems = append(problems, fmt.Sprintf("Invalid domain %s. Keys must be valid fully qualified DNS domain names.", origin))
+		}
+
 		for _, domain := range domains {
 			if domain.Code < 300 || domain.Code > 399 {
-				problems = append(problems, fmt.Sprintf("Invalid code for domain %s. Code must be between 300 and 399 inclusive.", origin))
+				problems = append(problems, fmt.Sprintf("Invalid redirect code for domain %s. Code must be between 300 and 399 inclusive.", origin))
 			}
 
-			if !strings.HasPrefix(domain.Destination, "http://") && !strings.HasPrefix(domain.Destination, "https://") {
-				problems = append(problems, fmt.Sprintf("Invalid destination for domain %s. Destination must begin with 'http://' or 'https://'.", origin))
+			if !strings.HasPrefix(domain.Replacement, "http://") && !strings.HasPrefix(domain.Replacement, "https://") {
+				problems = append(problems, fmt.Sprintf("Invalid replacement for domain %s. Destination must begin with 'http://' or 'https://'.", origin))
 			}
 
-			if !domainRegex.MatchString(origin) {
-				problems = append(problems, fmt.Sprintf("Invalid origin for domain %s. Origin must be a valid fully qualified DNS domain name.", origin))
-			}
 		}
 	}
 
@@ -76,18 +79,14 @@ func loadConfig(filename string) {
 }
 
 func redirectHandler(w http.ResponseWriter, r *http.Request) {
+	requestUri := r.URL.String()
 	for origin, domains := range config.Domains {
-		for _, domain := range domains {
-			if r.Host == origin {
-				redirectURL := domain.Destination
-				if r.URL.RawQuery != "" {
-					if strings.Contains(domain.Destination, "?") {
-						redirectURL += "&" + r.URL.RawQuery
-					} else {
-						redirectURL += "?" + r.URL.RawQuery
-					}
+		if r.Host == origin {
+			for _, domain := range domains {
+				if !domain.Regexp.MatchString(requestUri) {
+					continue
 				}
-				http.Redirect(w, r, redirectURL, domain.Code)
+				http.Redirect(w, r, domain.Regexp.ReplaceAllString(requestUri, domain.Replacement), domain.Code)
 				return
 			}
 		}
