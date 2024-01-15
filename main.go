@@ -80,10 +80,13 @@ func main() {
 	loadConfig(*configFile)
 
 	http.HandleFunc("/", redirectHandler)
+
+	log.Printf("Listening on %s", config.ListenAddress)
 	log.Fatal(http.ListenAndServe(config.ListenAddress, nil))
 }
 
 func loadConfig(filename string) {
+	log.Printf("Loading config from %s", filename)
 	file, err := os.Open(filename)
 	if err != nil {
 		log.Fatal(err)
