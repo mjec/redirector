@@ -43,6 +43,17 @@ func (r *RewriteRule) UnmarshalJSON(data []byte) error {
 	r.Replacement = temp.Replacement
 	r.Code = temp.Code
 
+	// Validate Replacement
+	if r.Regexp.NumSubexp() > 0 {
+		replacementRegex := regexp.MustCompile(`(?<!\$)(\$\d+)`)
+		matches := replacementRegex.FindAllString(r.Replacement, -1)
+		for _, match := range matches {
+			if len(match) > 1 && len(match) <= r.Regexp.NumSubexp()*2 && strings.Count(match, "$")%2 == 0 {
+				return fmt.Errorf("Invalid Replacement: %s. The number matched must be less than or equal to Regexp.NumSubexp()", r.Replacement)
+			}
+		}
+	}
+
 	return nil
 }
 
