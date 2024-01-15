@@ -19,8 +19,8 @@ type Domain struct {
 }
 
 type Config struct {
-	Domains []Domain `json:"domains"`
-	Addr    string   `json:"addr"`
+	Domains map[string]Domain `json:"domains"`
+	Addr    string            `json:"addr"`
 }
 
 var config Config
