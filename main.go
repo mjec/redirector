@@ -12,9 +12,9 @@ import (
 )
 
 type RewriteRule struct {
-	Destination string `json:"destination"`
-	Code        int    `json:"code"`
-	AppendPath  bool   `json:"append_path"`
+	Regexp      *regexp.Regexp
+	Replacement string
+	Code        int
 }
 
 type Config struct {
