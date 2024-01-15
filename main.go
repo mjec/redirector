@@ -12,20 +12,20 @@ import (
 	"strings"
 )
 
-type RewriteRule struct {
+type Rule struct {
 	Regexp      *regexp.Regexp
 	Replacement string
 	Code        int
 }
 
 type Config struct {
-	Domains map[string][]RewriteRule `json:"domains"`
-	Addr    string                   `json:"addr"`
+	RewriteRules  map[string][]Rule `json:"rewrites"`
+	ListenAddress string            `json:"listen_address"`
 }
 
 var config Config
 
-func (r *RewriteRule) UnmarshalJSON(data []byte) error {
+func (r *Rule) UnmarshalJSON(data []byte) error {
 	var temp struct {
 		Regexp      string `json:"regexp"`
 		Replacement string `json:"replacement"`
@@ -54,7 +54,7 @@ func main() {
 	loadConfig(*configFile)
 
 	http.HandleFunc("/", redirectHandler)
-	log.Fatal(http.ListenAndServe(config.Addr, nil))
+	log.Fatal(http.ListenAndServe(config.ListenAddress, nil))
 }
 
 func loadConfig(filename string) {
@@ -77,7 +77,7 @@ func loadConfig(filename string) {
 
 	var problems []string
 
-	for origin, domains := range config.Domains {
+	for origin, domains := range config.RewriteRules {
 		if !domainRegex.MatchString(origin) {
 			problems = append(problems, fmt.Sprintf("Invalid domain %s. Keys must be valid fully qualified DNS domain names.", origin))
 		}
@@ -113,7 +113,7 @@ func loadConfig(filename string) {
 
 func redirectHandler(w http.ResponseWriter, r *http.Request) {
 	requestUri := r.URL.String()
-	for origin, domains := range config.Domains {
+	for origin, domains := range config.RewriteRules {
 		if r.Host == origin {
 			for _, domain := range domains {
 				if !domain.Regexp.MatchString(requestUri) {
