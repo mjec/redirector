@@ -28,6 +28,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	defaultResponse := config.DefaultResponse
+	defaultResponseSource := "default"
 	requestUri := r.URL.RequestURI()
 
 	for origin, domain := range config.Domains {
@@ -38,7 +39,20 @@ func handler(w http.ResponseWriter, r *http.Request) {
 				}
 				destination := rule.Regexp.ReplaceAllString(requestUri, rule.Replacement)
 				if rule.LogHits {
-					slog.Default().Info("Redirect", "remote_addr", r.RemoteAddr, "method", r.Method, "host", r.Host, "rule_domain", origin, "rule_index", index, "request_uri", requestUri, "regexp", rule.Regexp, "code", rule.Code, "destination", destination)
+					slog.Default().Info(
+						"Redirect",
+						"remote_addr", r.RemoteAddr,
+						"method", r.Method,
+						"host", r.Host,
+						"request_uri", requestUri,
+						"user_agent", r.Header.Get("user-agent"),
+						"referer", r.Header.Get("referer"),
+						"rule_domain", origin,
+						"rule_index", index,
+						"regexp", rule.Regexp,
+						"code", rule.Code,
+						"destination", destination,
+					)
 				}
 				http.Redirect(w, r, destination, rule.Code)
 				return
@@ -46,13 +60,24 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 			if domain.DefaultResponse != nil {
 				defaultResponse = domain.DefaultResponse
+				defaultResponseSource = origin
 			}
 			break
 		}
 	}
 
 	if defaultResponse.LogHits {
-		slog.Default().Info("Default response", "remote_addr", r.RemoteAddr, "method", r.Method, "host", r.Host, "request_uri", requestUri, "code", defaultResponse.Code, "body", defaultResponse.Body, "headers", defaultResponse.Headers)
+		slog.Default().Info(
+			"Default response",
+			"remote_addr", r.RemoteAddr,
+			"method", r.Method,
+			"host", r.Host,
+			"request_uri", requestUri,
+			"user_agent", r.Header.Get("user-agent"),
+			"referer", r.Header.Get("referer"),
+			"code", defaultResponse.Code,
+			"source", defaultResponseSource,
+		)
 	}
 
 	if defaultResponse.Code == 0 {
