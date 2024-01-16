@@ -2,35 +2,45 @@ package main
 
 import (
 	"flag"
-	"log"
 	"net/http"
 	"os"
+
+	"log/slog"
 
 	"github.com/mjec/redirector/configuration"
 	"github.com/mjec/redirector/server"
 )
 
 func main() {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
 	configFile := flag.String("c", "config.json", "path to the config file")
 	flag.Parse()
 
-	log.Printf("Loading config from %s", *configFile)
+	logger.Info("Loading config", "file", *configFile)
 	file, err := os.Open(*configFile)
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("Unable to open configuration file", "file", *configFile, "error", err)
+		os.Exit(1)
 	}
 	defer file.Close()
 
 	config := &configuration.Config{}
 	if problems := configuration.LoadConfig(file, config); len(problems) > 0 {
+		logger.Error("Unable to start due to errors in configuration", "error_count", len(problems))
 		for _, problem := range problems {
-			log.Println(problem)
+			logger.Error("Configuration error", "error", problem)
 		}
-		log.Fatal("Configuration contains errors. Please fix the problems and try again.")
+		os.Exit(1)
 	}
 
 	http.HandleFunc("/", server.MakeHandler(config))
 
-	log.Printf("Listening on %s", config.ListenAddress)
-	log.Fatal(http.ListenAndServe(config.ListenAddress, nil))
+	logger.Info("Listening for remote connections", "address", config.ListenAddress)
+	err = http.ListenAndServe(config.ListenAddress, nil)
+	if err != nil {
+		logger.Error("Server shut down", "error", err)
+		os.Exit(1)
+	}
 }

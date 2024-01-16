@@ -2,7 +2,7 @@ package server
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -32,14 +32,15 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	for origin, domain := range config.Domains {
 		if strings.EqualFold(r.Host, origin) || (domain.MatchSubdomains && strings.HasSuffix(strings.ToLower(r.Host), "."+origin)) {
-			for _, rule := range domain.RewriteRules {
+			for index, rule := range domain.RewriteRules {
 				if !rule.Regexp.MatchString(requestUri) {
 					continue
 				}
+				destination := rule.Regexp.ReplaceAllString(requestUri, rule.Replacement)
 				if rule.LogHits {
-					log.Printf("%s %s %s %s", r.RemoteAddr, r.Method, r.Host, requestUri)
+					slog.Default().Info("Redirect", "remote_addr", r.RemoteAddr, "method", r.Method, "host", r.Host, "rule_domain", origin, "rule_index", index, "request_uri", requestUri, "regexp", rule.Regexp, "code", rule.Code, "destination", destination)
 				}
-				http.Redirect(w, r, rule.Regexp.ReplaceAllString(requestUri, rule.Replacement), rule.Code)
+				http.Redirect(w, r, destination, rule.Code)
 				return
 			}
 
@@ -51,7 +52,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if defaultResponse.LogHits {
-		log.Printf("%s %s %s %s", r.RemoteAddr, r.Method, r.Host, requestUri)
+		slog.Default().Info("Default response", "remote_addr", r.RemoteAddr, "method", r.Method, "host", r.Host, "request_uri", requestUri, "code", defaultResponse.Code, "body", defaultResponse.Body, "headers", defaultResponse.Headers)
 	}
 
 	if defaultResponse.Code == 0 {
