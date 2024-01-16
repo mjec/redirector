@@ -20,6 +20,17 @@
 					"log_hits": true
 				}
 			]
+		},
+		"health-check.internal": {
+            "default_response": {
+                "code": 200,
+                "body": "OK\n",
+                "headers": {
+                    "Connection":   "close",
+                    "Content-Type": "text/plain"
+                },
+                "log_hits": false
+            }
 		}
 	}
 }
