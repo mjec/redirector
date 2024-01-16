@@ -1,26 +1,25 @@
 {
-	"domains": {
-		"www.example.com": {
-			"rewrites": [
-				{
-					"regexp": "^/$",
-					"replacement": "https://www.example.com/",
-					"code": 301
-				}
-			],
-			"default_response": {
-				"code": 0
-			}
+	"listen_address": ":8000",
+	"default_response": {
+		"code": 421,
+		"body": "421 Misdirected Request\n\nTarget URI does not match an origin for which the server has been configured.\n",
+		"headers": {
+			"Connection":   "close",
+			"Content-Type": "text/plain"
 		},
-		"example.com:8000": {
+		"log_hits": true
+	},
+	"domains": {
+		"example.com": {
+			"match_subdomains": true,
 			"rewrites": [
 				{
-					"regexp": "(.*)",
+					"regexp": "^(.*)$",
 					"replacement": "https://www.example.com$1",
-					"code": 301
+					"code": 301,
+					"log_hits": true
 				}
 			]
 		}
-	},
-	"listen_address": ":8000"
+	}
 }
