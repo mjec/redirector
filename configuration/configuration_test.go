@@ -9,7 +9,7 @@ import (
 
 func TestLoadConfigOK(t *testing.T) {
 	jsonData := []byte(`{
-		"listen_address": ":8000",
+		"listen_address": ":8080",
 		"default_response": {
 			"code": 421,
 			"body": "421 Misdirected Request\n\nTarget URI does not match an origin for which the server has been configured.\n",
@@ -42,7 +42,7 @@ func TestLoadConfigOK(t *testing.T) {
 
 func TestLoadConfigMultipleSubdomainMatch(t *testing.T) {
 	jsonData := []byte(`{
-		"listen_address": ":8000",
+		"listen_address": ":8080",
 		"default_response": {
 			"code": 421,
 			"body": "421 Misdirected Request\n\nTarget URI does not match an origin for which the server has been configured.\n",

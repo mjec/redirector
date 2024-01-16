@@ -8,7 +8,7 @@ Add a configuration file at `config.json` with content like:
 
 ```json
 {
- "listen_address": ":8000",
+ "listen_address": ":8080",
  "default_response": {
   "code": 421,
   "body": "421 Misdirected Request\n\nTarget URI does not match an origin for which the server has been configured.\n",
