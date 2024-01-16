@@ -4,7 +4,7 @@ A simple HTTP server to redirect traffic from one place to another.
 
 ## Configuration
 
-Add a configuration file at `config.json` with content like:
+Add a configuration file at `config.json` (or another location set in the `REDIRECTOR_CONFIG` environment variable) with content like:
 
 ```json
 {

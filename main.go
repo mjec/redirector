@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"net/http"
 	"os"
 
@@ -15,13 +14,15 @@ func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	configFile := flag.String("c", "config.json", "path to the config file")
-	flag.Parse()
+	configFilePath := os.Getenv("REDIRECTOR_CONFIG")
+	if configFilePath == "" {
+		configFilePath = "config.json"
+	}
 
-	logger.Info("Loading config", "file", *configFile)
-	file, err := os.Open(*configFile)
+	logger.Info("Loading config", "file", configFilePath)
+	file, err := os.Open(configFilePath)
 	if err != nil {
-		logger.Error("Unable to open configuration file", "file", *configFile, "error", err)
+		logger.Error("Unable to open configuration file", "file", configFilePath, "error", err)
 		os.Exit(1)
 	}
 	defer file.Close()
