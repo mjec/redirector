@@ -9,6 +9,7 @@ Add a configuration file at `config.json` (or another location set in the `REDIR
 ```json
 {
  "listen_address": ":8080",
+ "metrics_address": ":9091",
  "default_response": {
   "code": 421,
   "body": "421 Misdirected Request\n\nTarget URI does not match an origin for which the server has been configured.\n",
