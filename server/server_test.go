@@ -1,10 +1,16 @@
 package server
 
 import (
+	"bufio"
+	"bytes"
+	"context"
+	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/mjec/redirector/configuration"
 )
@@ -39,6 +45,23 @@ func TestHandlerDefaultResponse500(t *testing.T) {
 	// We expect a 500 here because httptest.NewRecorder is not Hijackable
 	if rr.Code != 500 {
 		t.Errorf("Expected status code %d, but got %d", 500, rr.Code)
+	}
+}
+
+func TestHandlerDefaultResponseCloseConnection(t *testing.T) {
+	resetConfig()
+	config.Domains = map[string]configuration.Domain{}
+	config.DefaultResponse.Code = 0
+
+	req := httptest.NewRequest("", "http://example.com", nil)
+	rr := &hijackableResponse{
+		httptest.NewRecorder(),
+		false,
+	}
+
+	MakeHandler(config)(rr, req)
+	if !rr.wasClosed {
+		t.Errorf("Expected hijacked connection to be closed: %v", rr)
 	}
 }
 
@@ -243,6 +266,118 @@ func TestHandlerSubdomainMatching(t *testing.T) {
 	}
 }
 
+func TestHandlerLogging(t *testing.T) {
+	previousLogger := slog.Default()
+	defer slog.SetDefault(previousLogger)
+	loggerSpy := &logSpy{}
+	newLogger := slog.New(loggerSpy)
+	slog.SetDefault(newLogger)
+
+	resetConfig()
+	config.DefaultResponse.LogHits = false
+
+	req := httptest.NewRequest("", "http://example.com/welcome", nil)
+	rr := httptest.NewRecorder()
+
+	MakeHandler(config)(rr, req)
+
+	if loggerSpy.lineCounter != 0 {
+		t.Errorf("Expected no lines logged, but got %d lines logged (%v)", loggerSpy.lineCounter, loggerSpy.lines)
+	}
+
+	loggerSpy.reset()
+	resetConfig()
+	config.DefaultResponse.LogHits = true
+
+	rr = httptest.NewRecorder()
+
+	MakeHandler(config)(rr, req)
+
+	if loggerSpy.lineCounter != 1 {
+		t.Errorf("Expected 1 line logged, but got %d lines logged (%v)", loggerSpy.lineCounter, loggerSpy.lines)
+	}
+
+	loggerSpy.reset()
+	resetConfig()
+	config.Domains = map[string]configuration.Domain{
+		"mjec.example.com": {
+			RewriteRules: []configuration.Rule{
+				{
+					Regexp:      regexp.MustCompile("(.*)"),
+					Replacement: "https://www.example.com$1",
+					Code:        http.StatusMovedPermanently,
+					LogHits:     false,
+				},
+			},
+		},
+	}
+	config.DefaultResponse.LogHits = true
+
+	req = httptest.NewRequest("", "http://example.com/welcome", nil)
+	rr = httptest.NewRecorder()
+	MakeHandler(config)(rr, req)
+
+	if loggerSpy.lineCounter != 1 {
+		t.Errorf("Expected 1 line logged, but got %d lines logged (%v)", loggerSpy.lineCounter, loggerSpy.lines)
+	}
+
+	loggerSpy.reset()
+
+	req = httptest.NewRequest("", "http://mjec.example.com/welcome", nil)
+	rr = httptest.NewRecorder()
+	MakeHandler(config)(rr, req)
+
+	if loggerSpy.lineCounter != 0 {
+		t.Errorf("Expected 0 lines logged, but got %d lines logged (%v)", loggerSpy.lineCounter, loggerSpy.lines)
+	}
+
+	loggerSpy.reset()
+	resetConfig()
+	config.Domains = map[string]configuration.Domain{
+		"mjec.example.com": {
+			RewriteRules: []configuration.Rule{
+				{
+					Regexp:      regexp.MustCompile("(.*)"),
+					Replacement: "https://www.example.com$1",
+					Code:        http.StatusMovedPermanently,
+					LogHits:     true,
+				},
+			},
+		},
+	}
+	config.DefaultResponse.LogHits = false
+
+	req = httptest.NewRequest("", "http://example.com/welcome", nil)
+	rr = httptest.NewRecorder()
+	MakeHandler(config)(rr, req)
+
+	if loggerSpy.lineCounter != 0 {
+		t.Errorf("Expected 0 lines logged, but got %d lines logged (%v)", loggerSpy.lineCounter, loggerSpy.lines)
+	}
+
+	loggerSpy.reset()
+
+	req = httptest.NewRequest("", "http://mjec.example.com/welcome", nil)
+	rr = httptest.NewRecorder()
+	MakeHandler(config)(rr, req)
+
+	if loggerSpy.lineCounter != 1 {
+		t.Errorf("Expected 1 line logged, but got %d lines logged (%v)", loggerSpy.lineCounter, loggerSpy.lines)
+	}
+}
+
+func TestHandlerPanicsWithoutConfig(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Errorf("Expected handler to panic being called without config in context")
+		}
+	}()
+
+	req := httptest.NewRequest("", "http://example.com/welcome", nil)
+	rr := httptest.NewRecorder()
+	handler(rr, req)
+}
+
 func resetConfig() {
 	config = &configuration.Config{
 		DefaultResponse: &configuration.DefaultResponse{
@@ -255,4 +390,91 @@ func resetConfig() {
 		},
 		Domains: map[string]configuration.Domain{},
 	}
+}
+
+type hijackableResponse struct {
+	recorder  *httptest.ResponseRecorder
+	wasClosed bool
+}
+
+func (r *hijackableResponse) Header() http.Header {
+	return r.recorder.Header()
+}
+
+func (r *hijackableResponse) Write(b []byte) (int, error) {
+	return r.recorder.Write(b)
+}
+
+func (r *hijackableResponse) WriteHeader(statusCode int) {
+	r.recorder.WriteHeader(statusCode)
+}
+
+func (r *hijackableResponse) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	buf := bytes.NewBuffer([]byte(""))
+	return &connectionSpy{r}, bufio.NewReadWriter(bufio.NewReader(buf), bufio.NewWriter(buf)), nil
+}
+
+type connectionSpy struct {
+	response *hijackableResponse
+}
+
+func (c *connectionSpy) Read(b []byte) (n int, err error) {
+	panic("Not implemented")
+}
+
+func (c *connectionSpy) Write(b []byte) (n int, err error) {
+	panic("Not implemented")
+}
+
+func (c *connectionSpy) Close() error {
+	c.response.wasClosed = true
+	return nil
+}
+
+func (c *connectionSpy) LocalAddr() net.Addr {
+	panic("Not implemented")
+}
+
+func (c *connectionSpy) RemoteAddr() net.Addr {
+	panic("Not implemented")
+}
+
+func (c *connectionSpy) SetDeadline(t time.Time) error {
+	panic("Not implemented")
+}
+
+func (c *connectionSpy) SetReadDeadline(t time.Time) error {
+	panic("Not implemented")
+}
+
+func (c *connectionSpy) SetWriteDeadline(t time.Time) error {
+	panic("Not implemented")
+}
+
+type logSpy struct {
+	lineCounter int
+	lines       []slog.Record
+}
+
+func (h *logSpy) Handle(ctx context.Context, record slog.Record) error {
+	h.lineCounter++
+	h.lines = append(h.lines, record)
+	return nil
+}
+
+func (h *logSpy) Enabled(ctx context.Context, lvl slog.Level) bool {
+	return true
+}
+
+func (h *logSpy) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return h
+}
+
+func (h *logSpy) WithGroup(name string) slog.Handler {
+	return h
+}
+
+func (h *logSpy) reset() {
+	h.lineCounter = 0
+	h.lines = []slog.Record{}
 }
