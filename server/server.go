@@ -43,7 +43,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		panic("Metrics collector missing from context: this is a bug")
 	}
 
-	// To be set using setMetricsLabels()
+	// Values to be set later using setMetricsLabels()
 	metricLabels := prometheus.Labels{}
 
 	// InFlightRequests has no labels because we want to measure the total number of requests in flight,
@@ -134,13 +134,13 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(defaultResponse.Body))
 }
 
-func setMetricsLabels(l prometheus.Labels, domain string, rule_index int, method string, code int) {
-	l["domain"] = domain
+func setMetricsLabels(labels prometheus.Labels, domain string, rule_index int, method string, code int) {
+	labels["domain"] = domain
 	if rule_index < 0 {
-		l["rule_index"] = "default"
+		labels["rule_index"] = "default"
 	} else {
-		l["rule_index"] = strconv.FormatInt(int64(rule_index), 10)
+		labels["rule_index"] = strconv.FormatInt(int64(rule_index), 10)
 	}
-	l["method"] = method
-	l["code"] = strconv.FormatInt(int64(code), 10)
+	labels["method"] = method
+	labels["code"] = strconv.FormatInt(int64(code), 10)
 }
