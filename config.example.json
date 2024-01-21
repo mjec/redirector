@@ -12,7 +12,7 @@
 		"log_hits": true
 	},
 	"domains": {
-		"example.com": {
+		"example.net": {
 			"match_subdomains": true,
 			"rewrites": [
 				{
