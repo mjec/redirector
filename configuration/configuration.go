@@ -11,6 +11,8 @@ import (
 
 type Config struct {
 	ListenAddress   string            `json:"listen_address"`
+	MetricsAddress  string            `json:"metrics_address"`
+	MetricsPath     string            `json:"metrics_path"`
 	DefaultResponse *DefaultResponse  `json:"default_response"`
 	Domains         map[string]Domain `json:"domains" note:"Keys must be valid fully qualified DNS domain names in ASCII lower case and punycode if required."`
 }

@@ -13,17 +13,25 @@ import (
 	"time"
 
 	"github.com/mjec/redirector/configuration"
+	"github.com/prometheus/client_golang/prometheus"
+	io_prometheus_client "github.com/prometheus/client_model/go"
 )
 
 var config *configuration.Config = &configuration.Config{}
+var metrics *Metrics = &Metrics{
+	InFlightRequests: prometheus.NewGauge(prometheus.GaugeOpts{Name: "in_flight_requests", Help: "A gauge of requests currently being served"}),
+	TotalRequests:    prometheus.NewCounterVec(prometheus.CounterOpts{Name: "requests_total", Help: "A counter for requests"}, []string{"domain", "rule_index", "method", "code"}),
+	HandlerDuration:  prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "request_duration_seconds", Help: "A histogram of latencies for requests"}, []string{"domain", "rule_index", "method", "code"}),
+}
 
 func TestHandlerDefaultResponse421(t *testing.T) {
-	resetConfig()
+	resetConfigAndMetrics()
 	config.Domains = map[string]configuration.Domain{}
 	req := httptest.NewRequest("", "http://example.com", nil)
 	rr := httptest.NewRecorder()
 
-	MakeHandler(config)(rr, req)
+	MakeHandler(config, metrics)(rr, req)
+
 	if rr.Code != config.DefaultResponse.Code {
 		t.Errorf("Expected status code %d, but got %d", config.DefaultResponse.Code, rr.Code)
 	}
@@ -31,25 +39,28 @@ func TestHandlerDefaultResponse421(t *testing.T) {
 	if rr.Body.String() != expectedBody {
 		t.Errorf("Expected body '%s', but got '%s'", expectedBody, rr.Body.String())
 	}
+	expectCounterValue(t, metrics.TotalRequests, prometheus.Labels{"domain": "default", "rule_index": "default", "method": "GET", "code": "421"}, 1)
 }
 
-func TestHandlerDefaultResponse500(t *testing.T) {
-	resetConfig()
+func TestHandlerDefaultResponseNonHijackable(t *testing.T) {
+	resetConfigAndMetrics()
 	config.Domains = map[string]configuration.Domain{}
 	config.DefaultResponse.Code = 0
 
 	req := httptest.NewRequest("", "http://example.com", nil)
 	rr := httptest.NewRecorder()
 
-	MakeHandler(config)(rr, req)
+	MakeHandler(config, metrics)(rr, req)
 	// We expect a 500 here because httptest.NewRecorder is not Hijackable
 	if rr.Code != 500 {
 		t.Errorf("Expected status code %d, but got %d", 500, rr.Code)
 	}
+	// We expect this to record with code 0, because it's only not instantly closing the connection because rr is not Hijackable
+	expectCounterValue(t, metrics.TotalRequests, prometheus.Labels{"domain": "default", "rule_index": "default", "method": "GET", "code": "0"}, 1)
 }
 
 func TestHandlerDefaultResponseCloseConnection(t *testing.T) {
-	resetConfig()
+	resetConfigAndMetrics()
 	config.Domains = map[string]configuration.Domain{}
 	config.DefaultResponse.Code = 0
 
@@ -59,14 +70,16 @@ func TestHandlerDefaultResponseCloseConnection(t *testing.T) {
 		false,
 	}
 
-	MakeHandler(config)(rr, req)
+	MakeHandler(config, metrics)(rr, req)
+
 	if !rr.wasClosed {
 		t.Errorf("Expected hijacked connection to be closed: %v", rr)
 	}
+	expectCounterValue(t, metrics.TotalRequests, prometheus.Labels{"domain": "default", "rule_index": "default", "method": "GET", "code": "0"}, 1)
 }
 
 func TestHandlerSimpleMatching(t *testing.T) {
-	resetConfig()
+	resetConfigAndMetrics()
 	config.Domains = map[string]configuration.Domain{
 		"mjec.example.com": {},
 		"example.com": {
@@ -83,7 +96,7 @@ func TestHandlerSimpleMatching(t *testing.T) {
 	req := httptest.NewRequest("", "http://example.com/welcome", nil)
 	rr := httptest.NewRecorder()
 
-	MakeHandler(config)(rr, req)
+	MakeHandler(config, metrics)(rr, req)
 
 	if loc, err := rr.Result().Location(); err == nil {
 		if loc.String() != "https://www.example.com/welcome" {
@@ -95,10 +108,11 @@ func TestHandlerSimpleMatching(t *testing.T) {
 	if rr.Code != http.StatusMovedPermanently {
 		t.Errorf("Expected status code %d, but got %d", http.StatusMovedPermanently, rr.Code)
 	}
+	expectCounterValue(t, metrics.TotalRequests, prometheus.Labels{"domain": "example.com", "rule_index": "0", "method": "GET", "code": "301"}, 1)
 }
 
 func TestHandlerDomainSpecificDefaultResponse(t *testing.T) {
-	resetConfig()
+	resetConfigAndMetrics()
 	config.Domains = map[string]configuration.Domain{
 		"example.com": {},
 		"mjec.example.com": {
@@ -119,28 +133,33 @@ func TestHandlerDomainSpecificDefaultResponse(t *testing.T) {
 	req := httptest.NewRequest("", "http://example.com/welcome", nil)
 	rr := httptest.NewRecorder()
 
-	MakeHandler(config)(rr, req)
+	MakeHandler(config, metrics)(rr, req)
+
 	if rr.Code != http.StatusMisdirectedRequest {
 		// Nothing matches, go to default response
 		t.Errorf("Expected status code %d, but got %d", http.StatusMisdirectedRequest, rr.Code)
 	}
+	expectCounterValue(t, metrics.TotalRequests, prometheus.Labels{"domain": "default", "rule_index": "default", "method": "GET", "code": "421"}, 1)
 
 	req = httptest.NewRequest("", "http://mjec.example.com/welcome", nil)
 	rr = httptest.NewRecorder()
 
-	MakeHandler(config)(rr, req)
+	MakeHandler(config, metrics)(rr, req)
+
 	if rr.Code != http.StatusGone {
 		// Nothing matches, go to default response for this domain
 		t.Errorf("Expected status code %d, but got %d", http.StatusGone, rr.Code)
 	}
+	expectCounterValue(t, metrics.TotalRequests, prometheus.Labels{"domain": "mjec.example.com", "rule_index": "default", "method": "GET", "code": "410"}, 1)
 
 	req = httptest.NewRequest("", "http://mjec.example.com/only-this", nil)
 	rr = httptest.NewRecorder()
 
-	MakeHandler(config)(rr, req)
+	MakeHandler(config, metrics)(rr, req)
+
 	if rr.Code != http.StatusMovedPermanently {
 		// Nothing matches, go to default response for this domain
-		t.Errorf("Expected status code %d, but got %d", http.StatusGone, rr.Code)
+		t.Errorf("Expected status code %d, but got %d", http.StatusMovedPermanently, rr.Code)
 	}
 	if loc, err := rr.Result().Location(); err == nil {
 		if loc.String() != "https://www.example.com/only-there" {
@@ -149,10 +168,11 @@ func TestHandlerDomainSpecificDefaultResponse(t *testing.T) {
 	} else {
 		t.Errorf("Expected Location header but none found: %v", err)
 	}
+	expectCounterValue(t, metrics.TotalRequests, prometheus.Labels{"domain": "mjec.example.com", "rule_index": "0", "method": "GET", "code": "301"}, 1)
 }
 
 func TestHandlerMultipleRules(t *testing.T) {
-	resetConfig()
+	resetConfigAndMetrics()
 	config.Domains = map[string]configuration.Domain{
 		"mjec.example.com": {},
 		"example.com": {
@@ -174,7 +194,7 @@ func TestHandlerMultipleRules(t *testing.T) {
 	req := httptest.NewRequest("", "http://example.com/welcome", nil)
 	rr := httptest.NewRecorder()
 
-	MakeHandler(config)(rr, req)
+	MakeHandler(config, metrics)(rr, req)
 
 	if loc, err := rr.Result().Location(); err == nil {
 		if loc.String() != "https://www.example.com/welcome" {
@@ -186,11 +206,12 @@ func TestHandlerMultipleRules(t *testing.T) {
 	if rr.Code != http.StatusMovedPermanently {
 		t.Errorf("Expected status code %d, but got %d", http.StatusMovedPermanently, rr.Code)
 	}
+	expectCounterValue(t, metrics.TotalRequests, prometheus.Labels{"domain": "example.com", "rule_index": "1", "method": "GET", "code": "301"}, 1)
 
 	req = httptest.NewRequest("", "http://example.com/a/farewell", nil)
 	rr = httptest.NewRecorder()
 
-	MakeHandler(config)(rr, req)
+	MakeHandler(config, metrics)(rr, req)
 
 	if loc, err := rr.Result().Location(); err == nil {
 		if loc.String() != "https://a.example.com/farewell" {
@@ -202,10 +223,11 @@ func TestHandlerMultipleRules(t *testing.T) {
 	if rr.Code != http.StatusSeeOther {
 		t.Errorf("Expected status code %d, but got %d", http.StatusSeeOther, rr.Code)
 	}
+	expectCounterValue(t, metrics.TotalRequests, prometheus.Labels{"domain": "example.com", "rule_index": "0", "method": "GET", "code": "303"}, 1)
 }
 
 func TestHandlerSubdomainMatching(t *testing.T) {
-	resetConfig()
+	resetConfigAndMetrics()
 	config.Domains = map[string]configuration.Domain{
 		"example.com": {
 			RewriteRules: []configuration.Rule{
@@ -228,12 +250,14 @@ func TestHandlerSubdomainMatching(t *testing.T) {
 
 	req := httptest.NewRequest("", "http://www.example.com/welcome", nil)
 	rr := httptest.NewRecorder()
-	MakeHandler(config)(rr, req)
+
+	MakeHandler(config, metrics)(rr, req)
 
 	if rr.Code != http.StatusMisdirectedRequest {
 		// We should not see a match on this domain
 		t.Errorf("Expected status code %d, but got %d", http.StatusMisdirectedRequest, rr.Code)
 	}
+	expectCounterValue(t, metrics.TotalRequests, prometheus.Labels{"domain": "default", "rule_index": "default", "method": "GET", "code": "421"}, 1)
 
 	config.Domains["example.com"] = configuration.Domain{
 		MatchSubdomains: true,
@@ -244,7 +268,8 @@ func TestHandlerSubdomainMatching(t *testing.T) {
 	// Verify that we get a match on the subdomain `www`
 	req = httptest.NewRequest("", "http://www.example.com/welcome", nil)
 	rr = httptest.NewRecorder()
-	MakeHandler(config)(rr, req)
+
+	MakeHandler(config, metrics)(rr, req)
 
 	if rr.Code != http.StatusMovedPermanently {
 		t.Errorf("Expected status code %d, but got %d", http.StatusMovedPermanently, rr.Code)
@@ -256,14 +281,19 @@ func TestHandlerSubdomainMatching(t *testing.T) {
 	} else {
 		t.Errorf("Expected Location header but none found: %v", err)
 	}
+	expectCounterValue(t, metrics.TotalRequests, prometheus.Labels{"domain": "example.com", "rule_index": "0", "method": "GET", "code": "301"}, 1)
 
 	req = httptest.NewRequest("", "http://www.not-example.com/welcome", nil)
 	rr = httptest.NewRecorder()
-	MakeHandler(config)(rr, req)
+
+	MakeHandler(config, metrics)(rr, req)
+
 	if rr.Code != http.StatusMisdirectedRequest {
 		// This should NOT be a match
 		t.Errorf("Expected status code %d, but got %d", http.StatusMisdirectedRequest, rr.Code)
 	}
+	// Second request that hits default, so counter should be at 2
+	expectCounterValue(t, metrics.TotalRequests, prometheus.Labels{"domain": "default", "rule_index": "default", "method": "GET", "code": "421"}, 2)
 }
 
 func TestHandlerLogging(t *testing.T) {
@@ -273,32 +303,32 @@ func TestHandlerLogging(t *testing.T) {
 	newLogger := slog.New(loggerSpy)
 	slog.SetDefault(newLogger)
 
-	resetConfig()
+	resetConfigAndMetrics()
 	config.DefaultResponse.LogHits = false
 
 	req := httptest.NewRequest("", "http://example.com/welcome", nil)
 	rr := httptest.NewRecorder()
 
-	MakeHandler(config)(rr, req)
+	MakeHandler(config, metrics)(rr, req)
 
 	if loggerSpy.lineCounter != 0 {
 		t.Errorf("Expected no lines logged, but got %d lines logged (%v)", loggerSpy.lineCounter, loggerSpy.lines)
 	}
 
 	loggerSpy.reset()
-	resetConfig()
+	resetConfigAndMetrics()
 	config.DefaultResponse.LogHits = true
 
 	rr = httptest.NewRecorder()
 
-	MakeHandler(config)(rr, req)
+	MakeHandler(config, metrics)(rr, req)
 
 	if loggerSpy.lineCounter != 1 {
 		t.Errorf("Expected 1 line logged, but got %d lines logged (%v)", loggerSpy.lineCounter, loggerSpy.lines)
 	}
 
 	loggerSpy.reset()
-	resetConfig()
+	resetConfigAndMetrics()
 	config.Domains = map[string]configuration.Domain{
 		"mjec.example.com": {
 			RewriteRules: []configuration.Rule{
@@ -315,7 +345,7 @@ func TestHandlerLogging(t *testing.T) {
 
 	req = httptest.NewRequest("", "http://example.com/welcome", nil)
 	rr = httptest.NewRecorder()
-	MakeHandler(config)(rr, req)
+	MakeHandler(config, metrics)(rr, req)
 
 	if loggerSpy.lineCounter != 1 {
 		t.Errorf("Expected 1 line logged, but got %d lines logged (%v)", loggerSpy.lineCounter, loggerSpy.lines)
@@ -325,14 +355,14 @@ func TestHandlerLogging(t *testing.T) {
 
 	req = httptest.NewRequest("", "http://mjec.example.com/welcome", nil)
 	rr = httptest.NewRecorder()
-	MakeHandler(config)(rr, req)
+	MakeHandler(config, metrics)(rr, req)
 
 	if loggerSpy.lineCounter != 0 {
 		t.Errorf("Expected 0 lines logged, but got %d lines logged (%v)", loggerSpy.lineCounter, loggerSpy.lines)
 	}
 
 	loggerSpy.reset()
-	resetConfig()
+	resetConfigAndMetrics()
 	config.Domains = map[string]configuration.Domain{
 		"mjec.example.com": {
 			RewriteRules: []configuration.Rule{
@@ -349,7 +379,7 @@ func TestHandlerLogging(t *testing.T) {
 
 	req = httptest.NewRequest("", "http://example.com/welcome", nil)
 	rr = httptest.NewRecorder()
-	MakeHandler(config)(rr, req)
+	MakeHandler(config, metrics)(rr, req)
 
 	if loggerSpy.lineCounter != 0 {
 		t.Errorf("Expected 0 lines logged, but got %d lines logged (%v)", loggerSpy.lineCounter, loggerSpy.lines)
@@ -359,7 +389,7 @@ func TestHandlerLogging(t *testing.T) {
 
 	req = httptest.NewRequest("", "http://mjec.example.com/welcome", nil)
 	rr = httptest.NewRecorder()
-	MakeHandler(config)(rr, req)
+	MakeHandler(config, metrics)(rr, req)
 
 	if loggerSpy.lineCounter != 1 {
 		t.Errorf("Expected 1 line logged, but got %d lines logged (%v)", loggerSpy.lineCounter, loggerSpy.lines)
@@ -378,7 +408,7 @@ func TestHandlerPanicsWithoutConfig(t *testing.T) {
 	handler(rr, req)
 }
 
-func resetConfig() {
+func resetConfigAndMetrics() {
 	config = &configuration.Config{
 		DefaultResponse: &configuration.DefaultResponse{
 			Code: http.StatusMisdirectedRequest,
@@ -390,6 +420,10 @@ func resetConfig() {
 		},
 		Domains: map[string]configuration.Domain{},
 	}
+
+	metrics.InFlightRequests.Set(0)
+	metrics.TotalRequests.Reset()
+	metrics.HandlerDuration.Reset()
 }
 
 type hijackableResponse struct {
@@ -477,4 +511,15 @@ func (h *logSpy) WithGroup(name string) slog.Handler {
 func (h *logSpy) reset() {
 	h.lineCounter = 0
 	h.lines = []slog.Record{}
+}
+
+func expectCounterValue(t *testing.T, counterVec *prometheus.CounterVec, labels prometheus.Labels, expected float64) {
+	metric := &io_prometheus_client.Metric{}
+	if request_count, err := counterVec.GetMetricWith(labels); err != nil {
+		t.Errorf("Expected metric to exist, but got error: %v", err)
+	} else if err := request_count.Write(metric); err != nil {
+		t.Errorf("Expected metric to be written, but got error: %v", err)
+	} else if metric.GetCounter().GetValue() != expected {
+		t.Errorf("Expected metric value %f, but got %f", expected, metric.GetCounter().GetValue())
+	}
 }

@@ -6,6 +6,9 @@ import (
 
 	"log/slog"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/mjec/redirector/configuration"
 	"github.com/mjec/redirector/server"
 )
@@ -36,8 +39,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	http.HandleFunc("/", server.MakeHandler(config))
+	metrics := &server.Metrics{
+		InFlightRequests: prometheus.NewGauge(prometheus.GaugeOpts{Name: "in_flight_requests", Help: "A gauge of requests currently being served"}),
+		TotalRequests:    prometheus.NewCounterVec(prometheus.CounterOpts{Name: "requests_total", Help: "A counter for requests"}, []string{"domain", "rule_index", "method", "code"}),
+		HandlerDuration:  prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "request_duration_seconds", Help: "A histogram of latencies for requests"}, []string{"domain", "rule_index", "method", "code"}),
+	}
+	prometheus.MustRegister(metrics.InFlightRequests)
+	prometheus.MustRegister(metrics.TotalRequests)
+	prometheus.MustRegister(metrics.HandlerDuration)
 
+	go func() {
+		http.Handle(config.MetricsPath, promhttp.Handler())
+		http.ListenAndServe(config.MetricsAddress, nil)
+	}()
+	logger.Info("Listening for prometheus connections", "address", config.MetricsAddress, "path", config.MetricsPath)
+
+	http.HandleFunc("/", http.HandlerFunc(server.MakeHandler(config, metrics)))
 	logger.Info("Listening for remote connections", "address", config.ListenAddress)
 	err = http.ListenAndServe(config.ListenAddress, nil)
 	if err != nil {

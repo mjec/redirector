@@ -4,20 +4,31 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/mjec/redirector/configuration"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type contextKey int
 
 const (
 	configFromContext contextKey = iota
+	metricsFromContext
 )
 
-func MakeHandler(config *configuration.Config) func(http.ResponseWriter, *http.Request) {
+type Metrics struct {
+	InFlightRequests prometheus.Gauge
+	TotalRequests    *prometheus.CounterVec
+	HandlerDuration  *prometheus.HistogramVec
+}
+
+func MakeHandler(config *configuration.Config, metrics *Metrics) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		handler(w, r.WithContext(context.WithValue(r.Context(), configFromContext, config)))
+		ctx := context.WithValue(r.Context(), configFromContext, config)
+		ctx = context.WithValue(ctx, metricsFromContext, metrics)
+		handler(w, r.WithContext(ctx))
 	}
 }
 
@@ -26,6 +37,26 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	if config == nil {
 		panic("Config missing from context: this is a bug")
 	}
+
+	metrics := r.Context().Value(metricsFromContext).(*Metrics)
+	if metrics == nil {
+		panic("Metrics collector missing from context: this is a bug")
+	}
+
+	// To be set using setMetricsLabels()
+	metricLabels := prometheus.Labels{}
+
+	// InFlightRequests has no labels because we want to measure the total number of requests in flight,
+	// and we'd have to wait too long to figure out the label values.
+	metrics.InFlightRequests.Inc()
+	defer metrics.InFlightRequests.Dec()
+
+	timer := prometheus.NewTimer(prometheus.ObserverFunc(func(v float64) {
+		metrics.HandlerDuration.With(metricLabels).Observe(v)
+	}))
+	defer timer.ObserveDuration()
+
+	defer func() { metrics.TotalRequests.With(metricLabels).Inc() }()
 
 	defaultResponse := config.DefaultResponse
 	defaultResponseSource := "default"
@@ -38,6 +69,9 @@ func handler(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				destination := rule.Regexp.ReplaceAllString(requestUri, rule.Replacement)
+
+				setMetricsLabels(metricLabels, origin, index, r.Method, rule.Code)
+
 				if rule.LogHits {
 					slog.Default().Info(
 						"Redirect",
@@ -65,6 +99,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+
+	setMetricsLabels(metricLabels, defaultResponseSource, -1, r.Method, defaultResponse.Code)
 
 	if defaultResponse.LogHits {
 		slog.Default().Info(
@@ -96,4 +132,15 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add(header, value)
 	}
 	w.Write([]byte(defaultResponse.Body))
+}
+
+func setMetricsLabels(l prometheus.Labels, domain string, rule_index int, method string, code int) {
+	l["domain"] = domain
+	if rule_index < 0 {
+		l["rule_index"] = "default"
+	} else {
+		l["rule_index"] = strconv.FormatInt(int64(rule_index), 10)
+	}
+	l["method"] = method
+	l["code"] = strconv.FormatInt(int64(code), 10)
 }
