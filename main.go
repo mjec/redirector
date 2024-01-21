@@ -44,15 +44,24 @@ func main() {
 		TotalRequests:    prometheus.NewCounterVec(prometheus.CounterOpts{Name: "requests_total", Help: "A counter for requests"}, []string{"domain", "rule_index", "method", "code"}),
 		HandlerDuration:  prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "request_duration_seconds", Help: "A histogram of latencies for requests"}, []string{"domain", "rule_index", "method", "code"}),
 	}
-	prometheus.MustRegister(metrics.InFlightRequests)
-	prometheus.MustRegister(metrics.TotalRequests)
-	prometheus.MustRegister(metrics.HandlerDuration)
 
-	go func() {
-		http.Handle(config.MetricsPath, promhttp.Handler())
-		http.ListenAndServe(config.MetricsAddress, nil)
-	}()
-	logger.Info("Listening for prometheus connections", "address", config.MetricsAddress, "path", config.MetricsPath)
+	if config.MetricsAddress != "" {
+		if config.MetricsPath == "" {
+			config.MetricsPath = "/metrics"
+		}
+
+		prometheus.MustRegister(metrics.InFlightRequests)
+		prometheus.MustRegister(metrics.TotalRequests)
+		prometheus.MustRegister(metrics.HandlerDuration)
+
+		go func() {
+			http.Handle(config.MetricsPath, promhttp.Handler())
+			http.ListenAndServe(config.MetricsAddress, nil)
+		}()
+		logger.Info("Listening for prometheus connections", "address", config.MetricsAddress, "path", config.MetricsPath)
+	} else {
+		logger.Info("Metrics collection disabled because metrics_address is not set or set to an empty string or null")
+	}
 
 	http.HandleFunc("/", http.HandlerFunc(server.MakeHandler(config, metrics)))
 	logger.Info("Listening for remote connections", "address", config.ListenAddress)
