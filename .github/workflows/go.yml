@@ -1,25 +1,88 @@
-name: Go Build & Test
+name: Go Test & Deploy
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
   pull_request:
-    branches: [ "main" ]
 
 jobs:
 
-  build:
+  test:
+    name: Run tests
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-
+    - uses: actions/checkout@v4
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
         go-version: '1.21.x'
+    - name: Run tests
+      run: go test -json -cover -cover -coverprofile coverage.out ./... | tee test.log.out
+    - name: Summarize test results
+      if: ${{ !cancelled() }}
+      continue-on-error: true
+      run: |
+        >> $GITHUB_STEP_SUMMARY echo "### Test results"
+        >> $GITHUB_STEP_SUMMARY echo ""
+        >> $GITHUB_STEP_SUMMARY echo '```'
+        >> $GITHUB_STEP_SUMMARY jq -j 'reduce inputs as $item (null; . += [$item]) | map(select(.Test == null and .Action == "output")) | group_by(.Package) | map(reduce .[] as $i (""; . = $i.Output)) | join("")' test.log.out
+        >> $GITHUB_STEP_SUMMARY echo '```'
+        >> $GITHUB_STEP_SUMMARY echo ""
+    - name: Summarize coverage
+      if: ${{ !cancelled() }}
+      continue-on-error: true
+      run: |
+        >> $GITHUB_STEP_SUMMARY echo "### Test coverage"
+        >> $GITHUB_STEP_SUMMARY echo ""
+        >> $GITHUB_STEP_SUMMARY echo '```'
+        >> $GITHUB_STEP_SUMMARY go tool cover -func=coverage.out
+        >> $GITHUB_STEP_SUMMARY echo '```'
 
-    - name: Build
-      run: go build -v ./...
+  deploy:
+    name: Deploy to Fly.io
+    runs-on: ubuntu-latest
+    needs:
+      - test
+    if: ${{ needs.test.result == 'success' && github.event_name == 'push' && github.ref_name == 'main' && github.ref_type == 'branch' }}
+    environment: production
+    concurrency:
+      group: deploy
+      cancel-in-progress: true
+    steps:
+    - uses: actions/checkout@v4
+    - uses: superfly/flyctl-actions/setup-flyctl@master
+      with:
+        version: '0.2.18'
+    - name: Add fly.toml
+      env:
+        FLY_TOML: ${{ vars.FLY_TOML }}
+      run: echo "$FLY_TOML" > "$GITHUB_WORKSPACE/fly.toml"
+    - name: Deploy
+      env:
+        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      run: flyctl deploy --remote-only
 
-    - name: Test
-      run: go test -v ./...
+  explain:
+    name: Explain lack of deploy
+    runs-on: ubuntu-latest
+    needs:
+      - test
+    if: ${{ needs.test.result != 'success' || github.event_name != 'push' || github.ref_name != 'main' || github.ref_type != 'branch' }}
+    steps:
+    - name: Summarize deploy skip
+      if: ${{ needs.test.result == 'success' && (github.ref_name != 'main' || github.ref_type != 'branch') }}
+      run: |
+        >> $GITHUB_STEP_SUMMARY cat <<EOF
+        Deploy **skipped** because this was not a push to main.
+        Event: ${{ github.event_name }}
+        Ref:   ${{ github.ref}}
+        EOF
+    - name: Summarize deploy skip
+      if: ${{ needs.test.result != 'success' }}
+      run: |
+        >> $GITHUB_STEP_SUMMARY cat <<EOF
+        Deploy **skipped** because tests failed.
+        Event: ${{ github.event_name }}
+        Ref:   ${{ github.ref}}
+        EOF
