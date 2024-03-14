@@ -13,6 +13,7 @@ type Config struct {
 	ListenAddress   string            `json:"listen_address"`
 	MetricsAddress  string            `json:"metrics_address"`
 	MetricsPath     string            `json:"metrics_path"`
+	ClientIPHeader  string            `json:"client_ip_header" note:"Read the client IP address from this HTTP header, instead of Request.RemoteAddr (ignored if header is empty or not present)"`
 	DefaultResponse *DefaultResponse  `json:"default_response"`
 	Domains         map[string]Domain `json:"domains" note:"Keys must be valid fully qualified DNS domain names in ASCII lower case and punycode if required."`
 }
