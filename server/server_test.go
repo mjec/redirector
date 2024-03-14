@@ -396,6 +396,99 @@ func TestHandlerLogging(t *testing.T) {
 	}
 }
 
+func TestHandlerClientIPFromHeader(t *testing.T) {
+	const CONNECTION_REMOTE_ADDR string = "127.0.0.1"
+	const REAL_IP string = "127.0.0.2"
+	const IP_HEADER string = "X-Real-Ip"
+
+	previousLogger := slog.Default()
+	defer slog.SetDefault(previousLogger)
+	loggerSpy := &logSpy{}
+	newLogger := slog.New(loggerSpy)
+	slog.SetDefault(newLogger)
+
+	resetConfigAndMetrics()
+	config.DefaultResponse.LogHits = true
+	config.ClientIPHeader = ""
+
+	req := httptest.NewRequest("", "http://example.com/welcome", nil)
+	req.RemoteAddr = CONNECTION_REMOTE_ADDR
+	req.Header.Set(IP_HEADER, REAL_IP)
+	rr := httptest.NewRecorder()
+
+	MakeHandler(config, metrics)(rr, req)
+
+	if loggerSpy.lineCounter != 1 {
+		t.Errorf("Expected one line logged, but got %d lines logged (%v)", loggerSpy.lineCounter, loggerSpy.lines)
+	}
+
+	loggerSpy.lines[0].Attrs(func(a slog.Attr) bool {
+		if a.Key == "remote_addr" {
+			if a.Value.String() != CONNECTION_REMOTE_ADDR {
+				t.Errorf("Expected remote_addr to be %s (header ignored), but got %s", CONNECTION_REMOTE_ADDR, a.Value)
+			}
+			return true
+		}
+		return false
+	})
+
+	loggerSpy.reset()
+	resetConfigAndMetrics()
+
+	config.DefaultResponse.LogHits = true
+	config.ClientIPHeader = IP_HEADER
+
+	req = httptest.NewRequest("", "http://example.com/welcome", nil)
+	req.RemoteAddr = CONNECTION_REMOTE_ADDR
+	rr = httptest.NewRecorder()
+
+	MakeHandler(config, metrics)(rr, req)
+
+	if loggerSpy.lineCounter != 1 {
+		t.Errorf("Expected one line logged, but got %d lines logged (%v)", loggerSpy.lineCounter, loggerSpy.lines)
+	}
+
+	loggerSpy.lines[0].Attrs(func(a slog.Attr) bool {
+		if a.Key == "remote_addr" {
+			if a.Value.String() != CONNECTION_REMOTE_ADDR {
+				t.Errorf("Expected remote_addr to be %s (header configured but not set), but got %s", CONNECTION_REMOTE_ADDR, a.Value)
+			}
+			return true
+		}
+		return false
+	})
+
+	loggerSpy.reset()
+	resetConfigAndMetrics()
+
+	config.DefaultResponse.LogHits = true
+	config.ClientIPHeader = IP_HEADER
+
+	req = httptest.NewRequest("", "http://example.com/welcome", nil)
+	req.RemoteAddr = CONNECTION_REMOTE_ADDR
+	req.Header.Set(IP_HEADER, REAL_IP)
+	rr = httptest.NewRecorder()
+
+	MakeHandler(config, metrics)(rr, req)
+
+	if loggerSpy.lineCounter != 1 {
+		t.Errorf("Expected one line logged, but got %d lines logged (%v)", loggerSpy.lineCounter, loggerSpy.lines)
+	}
+
+	loggerSpy.lines[0].Attrs(func(a slog.Attr) bool {
+		if a.Key == "remote_addr" {
+			if a.Value.String() != REAL_IP {
+				t.Errorf("Expected remote_addr to be %s (header used), but got %s", REAL_IP, a.Value)
+			}
+			return true
+		}
+		return false
+	})
+
+	loggerSpy.reset()
+	resetConfigAndMetrics()
+}
+
 func TestHandlerPanicsWithoutConfig(t *testing.T) {
 	defer func() {
 		if recover() == nil {

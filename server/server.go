@@ -28,7 +28,11 @@ func MakeHandler(config *configuration.Config, metrics *Metrics) func(http.Respo
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := context.WithValue(r.Context(), configFromContext, config)
 		ctx = context.WithValue(ctx, metricsFromContext, metrics)
-		handler(w, r.WithContext(ctx))
+		req := r.WithContext(ctx)
+		if config.ClientIPHeader != "" && r.Header.Get(config.ClientIPHeader) != "" {
+			req.RemoteAddr = r.Header.Get(config.ClientIPHeader)
+		}
+		handler(w, req)
 	}
 }
 
