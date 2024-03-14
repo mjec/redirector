@@ -7,7 +7,6 @@ on:
   pull_request:
 
 jobs:
-
   test:
     name: Run tests
     runs-on: ubuntu-latest
@@ -18,7 +17,7 @@ jobs:
       with:
         go-version: '1.21.x'
     - name: Run tests
-      run: go test -json -cover -cover -coverprofile coverage.out ./... | tee test.log.out
+      run: go test -json -cover -cover -coverprofile ${{ github.workspace }}/coverage.out ${{ github.workspace }}/... | tee ${{ github.workspace }}/test.log.out
     - name: Summarize test results
       if: ${{ !cancelled() }}
       continue-on-error: true
@@ -26,7 +25,7 @@ jobs:
         >> $GITHUB_STEP_SUMMARY echo "### Test results"
         >> $GITHUB_STEP_SUMMARY echo ""
         >> $GITHUB_STEP_SUMMARY echo '```'
-        >> $GITHUB_STEP_SUMMARY jq -j 'reduce inputs as $item (null; . += [$item]) | map(select(.Test == null and .Action == "output")) | group_by(.Package) | map(reduce .[] as $i (""; . = $i.Output)) | join("")' test.log.out
+        >> $GITHUB_STEP_SUMMARY jq -j 'reduce inputs as $item (null; . += [$item]) | map(select(.Test == null and .Action == "output")) | group_by(.Package) | map(reduce .[] as $i (""; . = $i.Output)) | join("")' ${{ github.workspace }}/test.log.out
         >> $GITHUB_STEP_SUMMARY echo '```'
         >> $GITHUB_STEP_SUMMARY echo ""
     - name: Summarize coverage
@@ -36,7 +35,7 @@ jobs:
         >> $GITHUB_STEP_SUMMARY echo "### Test coverage"
         >> $GITHUB_STEP_SUMMARY echo ""
         >> $GITHUB_STEP_SUMMARY echo '```'
-        >> $GITHUB_STEP_SUMMARY go tool cover -func=coverage.out
+        >> $GITHUB_STEP_SUMMARY go tool cover -func=${{ github.workspace }}/coverage.out
         >> $GITHUB_STEP_SUMMARY echo '```'
 
   deploy:
@@ -47,21 +46,36 @@ jobs:
     if: ${{ needs.test.result == 'success' && github.event_name == 'push' && github.ref_name == 'main' && github.ref_type == 'branch' }}
     environment: production
     concurrency:
-      group: deploy
+      group: deploy-${{ vars.ENVIRONMENT_NAME }}
       cancel-in-progress: true
     steps:
-    - uses: actions/checkout@v4
-    - uses: superfly/flyctl-actions/setup-flyctl@master
+    - name: Set up flyctl
+      uses: superfly/flyctl-actions/setup-flyctl@master
       with:
         version: '0.2.18'
-    - name: Add fly.toml
-      env:
-        FLY_TOML: ${{ vars.FLY_TOML }}
-      run: echo "$FLY_TOML" > "$GITHUB_WORKSPACE/fly.toml"
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        path: app
+    - name: Checkout configuration
+      uses: actions/checkout@v4
+      with:
+        repository: 'mjec/redirector-configuration'
+        path: config
+        ref: ${{ vars.ENVIRONMENT_NAME }}
+        sparse-checkout: |
+          config.json
+          fly.toml
+        sparse-checkout-cone-mode: false
+        token: ${{ secrets.CONFIG_CHECKOUT_TOKEN }}
     - name: Deploy
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      run: flyctl deploy --remote-only
+      working-directory: app
+      run: |
+        mv ../config/config.json ./config.json
+        mv ../config/fly.toml ./fly.toml
+        flyctl deploy --remote-only
 
   explain:
     name: Explain lack of deploy
