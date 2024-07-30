@@ -5,6 +5,14 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
+    inputs:
+      perform_deploy:
+        description: "Deploy to production"
+        required: true
+        type: boolean
+        default: false
+        
 
 jobs:
   test:
@@ -43,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - test
-    if: ${{ needs.test.result == 'success' && github.event_name == 'push' && github.ref_name == 'main' && github.ref_type == 'branch' }}
+    if: ${{ needs.test.result == 'success' && (inputs.perform_deploy || (github.event_name == 'push' && github.ref_name == 'main' && github.ref_type == 'branch')) }}
     environment: production
     concurrency:
       group: deploy-${{ vars.ENVIRONMENT_NAME }}
@@ -82,8 +90,17 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - test
-    if: ${{ needs.test.result != 'success' || github.event_name != 'push' || github.ref_name != 'main' || github.ref_type != 'branch' }}
+    if: ${{ needs.test.result != 'success' || github.event_name != 'push' || github.ref_name != 'main' || github.ref_type != 'branch' || inputs.perform_deploy != true }}
     steps:
+    - name: Summarize deploy skip
+      if: ${{ needs.test.result == 'success' && github.event_name == 'workflow_dispatch' }}
+      run: |
+        >> $GITHUB_STEP_SUMMARY cat <<EOF
+        Deploy **skipped** because it was not requested on this manual run.
+        Event:          ${{ github.event_name }}
+        Ref:            ${{ github.ref }}
+        perform_deploy: ${{ github.event.inputs.perform_deploy }}
+        EOF
     - name: Summarize deploy skip
       if: ${{ needs.test.result == 'success' && (github.ref_name != 'main' || github.ref_type != 'branch') }}
       run: |
