@@ -31,6 +31,9 @@ jobs:
       name: "Output nodeploy_in_commit_message"
       continue-on-error: true
       run: |
+        set -x
+        echo GITHUB_SHA="$GITHUB_SHA"
+        git log -1 --format="%B" "$GITHUB_SHA"
         if git log -1 --format="%B" "$GITHUB_SHA" | grep -F NODEPLOY; then
           >> $GITHUB_OUTPUT echo "nodeploy_in_commit_message=true"
         else
@@ -85,10 +88,10 @@ jobs:
           EOF
 
           >> $GITHUB_STEP_SUMMARY cat << EOF
-          TEST_RESULT=\"$TEST_RESULT\" 
-          WAS_PUSH_TO_MAIN=\"$WAS_PUSH_TO_MAIN\"
-          WAS_DEPLOY_REQUESTED=\"$WAS_DEPLOY_REQUESTED\"
-          NODEPLOY_IN_COMMIT_MESSAGE=\"$NODEPLOY_IN_COMMIT_MESSAGE\"
+          TEST_RESULT="$TEST_RESULT" 
+          WAS_PUSH_TO_MAIN="$WAS_PUSH_TO_MAIN"
+          WAS_DEPLOY_REQUESTED="$WAS_DEPLOY_REQUESTED"
+          NODEPLOY_IN_COMMIT_MESSAGE="$NODEPLOY_IN_COMMIT_MESSAGE"
           EOF
 
           >> $GITHUB_STEP_SUMMARY echo '```'
