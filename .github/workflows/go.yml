@@ -17,6 +17,8 @@ jobs:
   test:
     name: Run tests
     runs-on: ubuntu-latest
+    outputs:
+      nodeploy_in_commit_message: ${{ steps.nodeploy_in_commit_message.outputs.nodeploy_in_commit_message }}
     steps:
     - uses: actions/checkout@v4
     - name: Set up Go
@@ -25,6 +27,15 @@ jobs:
         go-version: '1.21.x'
     - name: Run tests
       run: go test -json -cover -cover -coverprofile ${{ github.workspace }}/coverage.out ${{ github.workspace }}/... | tee ${{ github.workspace }}/test.log.out
+    - id: nodeploy_in_commit_message
+      name: "Output nodeploy_in_commit_message"
+      continue-on-error: true
+      run: |
+        if git log -1 --format="%B" "$GITHUB_SHA" | grep -F NODEPLOY; then
+          >> $GITHUB_OUTPUT echo "nodeploy_in_commit_message=true"
+        else
+          >> $GITHUB_OUTPUT echo "nodeploy_in_commit_message=false"
+        fi
     - name: Summarize test results
       if: ${{ !cancelled() }}
       continue-on-error: true
@@ -59,6 +70,7 @@ jobs:
           TEST_RESULT: ${{ needs.test.result }}
           WAS_PUSH_TO_MAIN: ${{ github.event_name == 'push' && github.ref_name == 'main' && github.ref_type == 'branch' }}
           WAS_DEPLOY_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.perform_deploy }}
+          NODEPLOY_IN_COMMIT_MESSAGE: ${{ needs.test.nodeploy_in_commit_message }}
           
         run: |
           >> $GITHUB_STEP_SUMMARY cat << "EOF"
@@ -76,17 +88,11 @@ jobs:
           TEST_RESULT=\"$TEST_RESULT\" 
           WAS_PUSH_TO_MAIN=\"$WAS_PUSH_TO_MAIN\"
           WAS_DEPLOY_REQUESTED=\"$WAS_DEPLOY_REQUESTED\"
+          NODEPLOY_IN_COMMIT_MESSAGE=\"$NODEPLOY_IN_COMMIT_MESSAGE\"
           EOF
 
-          if git log -1 --format="%B" "$GITHUB_SHA" | grep -F NODEPLOY; then
-            NODEPLOY_IN_COMMIT_MESSAGE=true
-          else
-            NODEPLOY_IN_COMMIT_MESSAGE=false
-          fi
-
-          >> $GITHUB_STEP_SUMMARY echo NODEPLOY_IN_COMMIT_MESSAGE=\"$NODEPLOY_IN_COMMIT_MESSAGE\"
           >> $GITHUB_STEP_SUMMARY echo '```'
-          >> $GITHUB_STEP_SUMMARY echo ""          
+          >> $GITHUB_STEP_SUMMARY echo ""
 
           if ! [ "$TEST_RESULT" = "success" ]; then
             >> $GITHUB_STEP_SUMMARY echo "Tests failed."
