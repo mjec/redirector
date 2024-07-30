@@ -13,7 +13,6 @@ on:
         type: boolean
         default: false
         
-
 jobs:
   test:
     name: Run tests
@@ -57,29 +56,67 @@ jobs:
       - id: decide
         name: Decide
         env:
-          TEST_RESULT: ${{needs.test.result}}
-          WAS_PUSH_TO_MAIN: ${{github.event_name == 'push' && github.ref_name == 'main' && github.ref_type == 'branch'}}
-          WAS_DEPLOY_REQUESTED: ${{ github.event.inputs.perform_deploy }}
+          TEST_RESULT: ${{ needs.test.result }}
+          WAS_PUSH_TO_MAIN: ${{ github.event_name == 'push' && github.ref_name == 'main' && github.ref_type == 'branch' }}
+          WAS_DEPLOY_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.perform_deploy }}
+          
         run: |
           >> $GITHUB_STEP_SUMMARY cat <<EOF
-          Event: ${{ github.event_name }}
-          Ref:   ${{ github.ref}}
 
+          ### Trigger
+          Event: `${{ github.event_name }}`
+          Ref:   `${{ github.ref}}`
+
+          ### Environment
+
+          ```
           TEST_RESULT=\"$TEST_RESULT\" 
           WAS_PUSH_TO_MAIN=\"$WAS_PUSH_TO_MAIN\"
           WAS_DEPLOY_REQUESTED=\"$WAS_DEPLOY_REQUESTED\"
-
           EOF
-          
-          if   [ "$TEST_RESULT" = "success" ] \
-            && [ "$WAS_PUSH_TO_MAIN" = "true" ] \
-            && [ "$WAS_DEPLOY_REQUESTED" = "true" ]; then
-              >> $GITHUB_STEP_SUMMARY echo "Deploying."
-              >> $GITHUB_OUTPUT echo "deploy=true"
+
+          if git log -1 --format="%B" "$GITHUB_SHA" | grep -F NODEPLOY; then
+            NODEPLOY_IN_COMMIT_MESSAGE=true
           else
+            NODEPLOY_IN_COMMIT_MESSAGE=false
+          fi
+
+          >> $GITHUB_STEP_SUMMARY echo NODEPLOY_IN_COMMIT_MESSAGE=\"$NODEPLOY_IN_COMMIT_MESSAGE\"
+          >> $GITHUB_STEP_SUMMARY echo '```'
+          >> $GITHUB_STEP_SUMMARY echo ""          
+
+          if ! [ "$TEST_RESULT" = "success" ]; then
+            >> $GITHUB_STEP_SUMMARY echo "Tests failed."
+            >> $GITHUB_STEP_SUMMARY echo "Not deploying."
+            >> $GITHUB_OUTPUT echo "deploy=false"
+            exit 0
+          else
+            >> $GITHUB_STEP_SUMMARY echo "Tests passed."
+          fi
+
+          if [ "$WAS_PUSH_TO_MAIN" = "true" ] ; then
+            >> $GITHUB_STEP_SUMMARY echo "Triggered by push to main."
+            if [ "$NODEPLOY_IN_COMMIT_MESSAGE" = "true" ]; then
+              >> $GITHUB_STEP_SUMMARY echo "Latest commit ($GITHUB_SHA) message contains NODEPLOY."
               >> $GITHUB_STEP_SUMMARY echo "Not deploying."
               >> $GITHUB_OUTPUT echo "deploy=false"
+            else
+              >> $GITHUB_STEP_SUMMARY echo "Deploying to production."
+              >> $GITHUB_OUTPUT echo "deploy=true"
+            fi
+              exit 0
           fi
+          
+          if [ "$WAS_DEPLOY_REQUESTED" = "true" ]
+            >> $GITHUB_STEP_SUMMARY echo "Triggered by manual request."
+            >> $GITHUB_STEP_SUMMARY echo "Deployment to production was requested."
+            >> $GITHUB_STEP_SUMMARY echo "Deploying to production."
+            >> $GITHUB_OUTPUT echo "deploy=true"
+            exit 0
+          fi
+
+          >> $GITHUB_STEP_SUMMARY echo "Not deploying."
+          >> $GITHUB_OUTPUT echo "deploy=false"
 
   deploy:
     name: Deploy to Fly.io
