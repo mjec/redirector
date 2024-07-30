@@ -70,6 +70,9 @@ jobs:
           ### Environment
 
           ```
+          EOF
+
+          >> $GITHUB_STEP_SUMMARY cat << EOF
           TEST_RESULT=\"$TEST_RESULT\" 
           WAS_PUSH_TO_MAIN=\"$WAS_PUSH_TO_MAIN\"
           WAS_DEPLOY_REQUESTED=\"$WAS_DEPLOY_REQUESTED\"
