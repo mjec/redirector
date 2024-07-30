@@ -59,19 +59,34 @@ jobs:
         env:
           TEST_RESULT: ${{needs.test.result}}
           WAS_PUSH_TO_MAIN: ${{github.event_name == 'push' && github.ref_name == 'main' && github.ref_type == 'branch'}}
-          WAS_DEPLOY_REQUESTED: ${{ inputs.perform_deploy }}
+          WAS_DEPLOY_REQUESTED: ${{ github.event.inputs.perform_deploy }}
         run: |
-          echo TEST_RESULT=\"$TEST_RESULT\"
-          echo WAS_PUSH_TO_MAIN=\"$WAS_PUSH_TO_MAIN\"
-          echo WAS_DEPLOY_REQUESTED=\"$WAS_DEPLOY_REQUESTED\"
-          >> $GITHUB_OUTPUT echo "deploy=false"
+          >> $GITHUB_STEP_SUMMARY cat <<EOF
+          Event: ${{ github.event_name }}
+          Ref:   ${{ github.ref}}
+
+          TEST_RESULT=\"$TEST_RESULT\" 
+          WAS_PUSH_TO_MAIN=\"$WAS_PUSH_TO_MAIN\"
+          WAS_DEPLOY_REQUESTED=\"$WAS_DEPLOY_REQUESTED\"
+
+          EOF
+          
+          if   [ "$TEST_RESULT" = "success" ] \
+            && [ "$WAS_PUSH_TO_MAIN" = "true" ] \
+            && [ "$WAS_DEPLOY_REQUESTED" = "true" ]; then
+              >> $GITHUB_STEP_SUMMARY echo "Deploying."
+              >> $GITHUB_OUTPUT echo "deploy=true"
+          else
+              >> $GITHUB_STEP_SUMMARY echo "Not deploying."
+              >> $GITHUB_OUTPUT echo "deploy=false"
+          fi
 
   deploy:
     name: Deploy to Fly.io
     runs-on: ubuntu-latest
     needs:
       - decision
-    if: ${{ needs.decision.deploy != 'true' }}
+    if: ${{ needs.decision.deploy == 'true' }}
     environment: production
     concurrency:
       group: deploy-${{ vars.ENVIRONMENT_NAME }}
@@ -104,36 +119,3 @@ jobs:
         mv ../config/config.json ./config.json
         mv ../config/fly.toml ./fly.toml
         flyctl deploy --remote-only
-
-  explain:
-    name: Explain lack of deploy
-    runs-on: ubuntu-latest
-    needs:
-      - test
-    if: ${{ needs.test.result != 'success' || github.event_name != 'push' || github.ref_name != 'main' || github.ref_type != 'branch' || inputs.perform_deploy != true }}
-    steps:
-    - name: Summarize deploy skip
-      if: ${{ needs.test.result == 'success' && github.event_name == 'workflow_dispatch' }}
-      run: |
-        >> $GITHUB_STEP_SUMMARY cat <<EOF
-        Deploy **skipped** because it was not requested on this manual run.
-        Event:          ${{ github.event_name }}
-        Ref:            ${{ github.ref }}
-        perform_deploy: ${{ github.event.inputs.perform_deploy }}
-        EOF
-    - name: Summarize deploy skip
-      if: ${{ needs.test.result == 'success' && (github.ref_name != 'main' || github.ref_type != 'branch') }}
-      run: |
-        >> $GITHUB_STEP_SUMMARY cat <<EOF
-        Deploy **skipped** because this was not a push to main.
-        Event: ${{ github.event_name }}
-        Ref:   ${{ github.ref}}
-        EOF
-    - name: Summarize deploy skip
-      if: ${{ needs.test.result != 'success' }}
-      run: |
-        >> $GITHUB_STEP_SUMMARY cat <<EOF
-        Deploy **skipped** because tests failed.
-        Event: ${{ github.event_name }}
-        Ref:   ${{ github.ref}}
-        EOF
