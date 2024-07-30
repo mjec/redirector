@@ -107,7 +107,7 @@ jobs:
               exit 0
           fi
           
-          if [ "$WAS_DEPLOY_REQUESTED" = "true" ]
+          if [ "$WAS_DEPLOY_REQUESTED" = "true" ]; then
             >> $GITHUB_STEP_SUMMARY echo "Triggered by manual request."
             >> $GITHUB_STEP_SUMMARY echo "Deployment to production was requested."
             >> $GITHUB_STEP_SUMMARY echo "Deploying to production."
