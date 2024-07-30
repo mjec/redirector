@@ -46,12 +46,32 @@ jobs:
         >> $GITHUB_STEP_SUMMARY go tool cover -func=${{ github.workspace }}/coverage.out
         >> $GITHUB_STEP_SUMMARY echo '```'
 
+  decision:
+    name: Decide whether to deploy
+    runs-on: ubuntu-latest
+    needs:
+      - test
+    outputs:
+      deploy: ${{ steps.decide.outputs.deploy }}
+    steps:
+      - id: decide
+        name: Decide
+        env:
+          TEST_RESULT: ${{needs.test.result}}
+          WAS_PUSH_TO_MAIN: ${{github.event_name == 'push' && github.ref_name == 'main' && github.ref_type == 'branch'}}
+          WAS_DEPLOY_REQUESTED: ${{ inputs.perform_deploy }}
+        run: |
+          echo TEST_RESULT=\"$TEST_RESULT\"
+          echo WAS_PUSH_TO_MAIN=\"$WAS_PUSH_TO_MAIN\"
+          echo WAS_DEPLOY_REQUESTED=\"$WAS_DEPLOY_REQUESTED\"
+          >> $GITHUB_OUTPUT echo "deploy=false"
+
   deploy:
     name: Deploy to Fly.io
     runs-on: ubuntu-latest
     needs:
-      - test
-    if: ${{ needs.test.result == 'success' && (inputs.perform_deploy || (github.event_name == 'push' && github.ref_name == 'main' && github.ref_type == 'branch')) }}
+      - decision
+    if: ${{ needs.decision.deploy != 'true' }}
     environment: production
     concurrency:
       group: deploy-${{ vars.ENVIRONMENT_NAME }}
