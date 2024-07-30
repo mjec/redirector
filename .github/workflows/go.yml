@@ -61,7 +61,7 @@ jobs:
           WAS_DEPLOY_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.perform_deploy }}
           
         run: |
-          >> $GITHUB_STEP_SUMMARY cat <<EOF
+          >> $GITHUB_STEP_SUMMARY cat << "EOF"
 
           ### Trigger
           Event: `${{ github.event_name }}`
