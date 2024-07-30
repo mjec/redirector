@@ -72,8 +72,9 @@ jobs:
         env:
           TEST_RESULT: ${{ needs.test.result }}
           WAS_PUSH_TO_MAIN: ${{ github.event_name == 'push' && github.ref_name == 'main' && github.ref_type == 'branch' }}
-          WAS_DEPLOY_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.perform_deploy }}
           NODEPLOY_IN_COMMIT_MESSAGE: ${{ needs.test.outputs.nodeploy_in_commit_message }}
+          WAS_MANUALLY_TRIGGERED: ${{ github.event_name == 'workflow_dispatch' }}
+          WAS_DEPLOY_REQUESTED: ${{ github.event_name == 'workflow_dispatch' && inputs.perform_deploy }}
           
         run: |
           >> $GITHUB_STEP_SUMMARY cat << "EOF"
@@ -119,11 +120,17 @@ jobs:
               exit 0
           fi
           
-          if [ "$WAS_DEPLOY_REQUESTED" = "true" ]; then
+          if [ "$WAS_MANUALLY_TRIGGERED" = "true" ]; then
             >> $GITHUB_STEP_SUMMARY echo "Triggered by manual request."
-            >> $GITHUB_STEP_SUMMARY echo "Deployment to production was requested."
-            >> $GITHUB_STEP_SUMMARY echo "Deploying to production."
-            >> $GITHUB_OUTPUT echo "deploy=true"
+            if [ "$WAS_DEPLOY_REQUESTED" = "true" ]; then
+              >> $GITHUB_STEP_SUMMARY echo "Deployment to production was requested."
+              >> $GITHUB_STEP_SUMMARY echo "Deploying to production."
+              >> $GITHUB_OUTPUT echo "deploy=true"
+            else
+              >> $GITHUB_STEP_SUMMARY echo "Deployment to production was not requested."
+              >> $GITHUB_STEP_SUMMARY echo "Not deploying."
+              >> $GITHUB_OUTPUT echo "deploy=false"
+            fi
             exit 0
           fi
 
